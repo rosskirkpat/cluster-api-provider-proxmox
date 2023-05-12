@@ -6,6 +6,43 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - clusters
+  - clusters/status
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - proxmoxclusteridentities
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
   - proxmoxclusters
@@ -57,3 +94,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - topology.proxmox.com
+  resources:
+  - availabilityzones
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - topology.proxmox.com
+  resources:
+  - availabilityzones/status
+  verbs:
+  - get
+  - list
+  - watch
