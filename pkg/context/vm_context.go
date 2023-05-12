@@ -12,11 +12,12 @@ import (
 // VMContext is a Go context used with a ProxmoxVM.
 type VMContext struct {
 	*ControllerContext
-	ClusterModuleInfo *string
-	ProxmoxVM         *infrav1.ProxmoxVM
-	PatchHelper       *patch.Helper
-	Logger            logr.Logger
-	Session           *session.Session
+	ClusterModuleInfo    *string
+	ProxmoxVM            *infrav1.ProxmoxVM
+	PatchHelper          *patch.Helper
+	Logger               logr.Logger
+	Session              *session.Session
+	ProxmoxFailureDomain *infrav1.ProxmoxFailureDomain
 }
 
 // String returns ProxmoxVMGroupVersionKind ProxmoxVMNamespace/ProxmoxVMName.
