@@ -8,4 +8,23 @@ layout:
 - go.kubebuilder.io/v4
 projectName: cluster-api-provider-proxmox
 repo: github.com/rosskirkpat/cluster-api-provider-proxmox
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: cluster.x-k8s.io
+  group: infrastructure
+  kind: ProxmoxCluster
+  path: github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: cluster.x-k8s.io
+  group: infrastructure
+  kind: ProxmoxMachine
+  path: github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1
+  version: v1alpha1
 version: "3"
