@@ -3,6 +3,7 @@ package controllers
 import (
 	goctx "context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/runtime"
 	"reflect"
 	"strings"
 	"time"
@@ -42,6 +43,7 @@ const hostInfoErrStr = "host info cannot be used as a label value"
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/finalizers,verbs=update
 // +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachinetemplates,verbs=get;list;watch;create;update;patch;delete
@@ -87,7 +89,7 @@ func AddMachineControllerToManager(ctx *context.ControllerContext, mgr manager.M
 		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles})
 
-	r := machineReconciler{
+	r := ProxmoxMachineReconciler{
 		ControllerContext: controllerContext,
 		VMService:         &services.PimMachineService{},
 	}
@@ -105,7 +107,7 @@ func AddMachineControllerToManager(ctx *context.ControllerContext, mgr manager.M
 		}),
 	)
 
-	c, err := builder.Build(r)
+	c, err := builder.Build(&r)
 	if err != nil {
 		return err
 	}
@@ -121,15 +123,24 @@ func AddMachineControllerToManager(ctx *context.ControllerContext, mgr manager.M
 	return nil
 }
 
-type machineReconciler struct {
+// SetupWithManager sets up the controller with the Manager.
+func (r *ProxmoxMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&infrav1.ProxmoxMachine{}).
+		Complete(r)
+}
+
+// ProxmoxMachineReconciler reconciles a ProxmoxMachine object
+type ProxmoxMachineReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
 	*context.ControllerContext
 	VMService       services.ProxmoxMachineService
 	networkProvider services.NetworkProvider
-	supervisorBased bool
 }
 
 // Reconcile ensures the back-end state reflects the Kubernetes resource state intent.
-func (r machineReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *ProxmoxMachineReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	var machineContext context.MachineContext
 	logger := r.Logger.WithName(req.Namespace).WithName(req.Name)
 	logger.V(3).Info("Starting Reconcile ProxmoxMachine")
@@ -209,7 +220,7 @@ func (r machineReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.
 	return r.reconcileNormal(machineContext)
 }
 
-func (r machineReconciler) reconcileDelete(ctx context.MachineContext) (reconcile.Result, error) {
+func (r *ProxmoxMachineReconciler) reconcileDelete(ctx context.MachineContext) (reconcile.Result, error) {
 	ctx.GetLogger().Info("Handling deleted ProxmoxMachine")
 	conditions.MarkFalse(ctx.GetProxmoxMachine(), infrav1.VMProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
 
@@ -227,7 +238,7 @@ func (r machineReconciler) reconcileDelete(ctx context.MachineContext) (reconcil
 	return reconcile.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
-func (r machineReconciler) reconcileNormal(ctx context.MachineContext) (reconcile.Result, error) {
+func (r *ProxmoxMachineReconciler) reconcileNormal(ctx context.MachineContext) (reconcile.Result, error) {
 	machineFailed, err := r.VMService.SyncFailureReason(ctx)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return reconcile.Result{}, err
@@ -284,7 +295,7 @@ func (r machineReconciler) reconcileNormal(ctx context.MachineContext) (reconcil
 // patchMachineLabelsWithHostInfo adds the Proxmox host information as a label to the Machine object.
 // The Proxmox host information is added with the CAPI node label prefix
 // which would be added onto the node by the CAPI controllers.
-func (r *machineReconciler) patchMachineLabelsWithHostInfo(ctx context.MachineContext) error {
+func (r *ProxmoxMachineReconciler) patchMachineLabelsWithHostInfo(ctx context.MachineContext) error {
 	hostInfo, err := r.VMService.GetHostInfo(ctx)
 	if err != nil {
 		return err
@@ -311,7 +322,7 @@ func (r *machineReconciler) patchMachineLabelsWithHostInfo(ctx context.MachineCo
 	return patchHelper.Patch(r, machine)
 }
 
-func (r *machineReconciler) clusterToProxmoxMachines(a client.Object) []reconcile.Request {
+func (r *ProxmoxMachineReconciler) clusterToProxmoxMachines(a client.Object) []reconcile.Request {
 	requests := []reconcile.Request{}
 	machines, err := util.GetProxmoxMachinesInCluster(goctx.Background(), r.Client, a.GetNamespace(), a.GetName())
 	if err != nil {
@@ -329,7 +340,7 @@ func (r *machineReconciler) clusterToProxmoxMachines(a client.Object) []reconcil
 	return requests
 }
 
-func (r *machineReconciler) fetchCAPICluster(machine *clusterv1.Machine, proxmoxMachine metav1.Object) *clusterv1.Cluster {
+func (r *ProxmoxMachineReconciler) fetchCAPICluster(machine *clusterv1.Machine, proxmoxMachine metav1.Object) *clusterv1.Cluster {
 	cluster, err := clusterutilv1.GetClusterFromMetadata(r, r.Client, machine.ObjectMeta)
 	if err != nil {
 		r.Logger.Info("Machine is missing cluster label or cluster does not exist")

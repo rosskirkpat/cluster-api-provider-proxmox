@@ -26,7 +26,7 @@ import (
 
 // reconcileIPAddressClaims ensures that ProxmoxVMs that are configured with .spec.network.devices.addressFromPools
 // have corresponding IPAddressClaims.
-func (r vmReconciler) reconcileIPAddressClaims(ctx *context.VMContext) error {
+func (r *ProxmoxVMReconciler) reconcileIPAddressClaims(ctx *context.VMContext) error {
 	totalClaims, claimsCreated := 0, 0
 	claimsFulfilled := 0
 
@@ -185,7 +185,7 @@ func createOrPatchIPAddressClaim(ctx *context.VMContext, name string, poolRef co
 
 // deleteIPAddressClaims removes the finalizers from the IPAddressClaim objects
 // thus freeing them up for garbage collection.
-func (r vmReconciler) deleteIPAddressClaims(ctx *context.VMContext) error {
+func (r *ProxmoxVMReconciler) deleteIPAddressClaims(ctx *context.VMContext) error {
 	for devIdx, device := range ctx.ProxmoxVM.Spec.Network.Devices {
 		for poolRefIdx := range device.AddressesFromPools {
 			// check if claim exists

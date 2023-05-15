@@ -22,9 +22,10 @@ import (
 
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;patch;update
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
-// +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxclusteridentities,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxclusters,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxclusteridentities,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxclusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=topology.proxmox.com,resources=availabilityzones,verbs=get;list;watch
 // +kubebuilder:rbac:groups=topology.proxmox.com,resources=availabilityzones/status,verbs=get;list;watch
@@ -46,7 +47,7 @@ func AddClusterControllerToManager(ctx *context.ControllerContext, mgr manager.M
 		Logger:   ctx.Logger.WithName(controllerNameShort),
 	}
 
-	reconciler := clusterReconciler{
+	reconciler := ProxmoxClusterReconciler{
 		ControllerContext: controllerContext,
 	}
 	clusterToInfraFn := clusterToInfrastructureMapFunc(ctx)
@@ -91,7 +92,7 @@ func AddClusterControllerToManager(ctx *context.ControllerContext, mgr manager.M
 		).
 		WithEventFilter(predicates.ResourceIsNotExternallyManaged(reconciler.Logger)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Build(reconciler)
+		Build(&reconciler)
 	if err != nil {
 		return err
 	}

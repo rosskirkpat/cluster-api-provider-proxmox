@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/identity"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/session"
+	"k8s.io/apimachinery/pkg/runtime"
 	"reflect"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
+	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/context"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/record"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/services"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/util"
 	apiv1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,12 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/context"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/record"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/services"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/util"
 )
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxvms,verbs=get;list;watch;create;update;patch;delete
@@ -65,7 +65,7 @@ func AddVMControllerToManager(ctx *context.ControllerContext, mgr manager.Manage
 		Recorder: record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		Logger:   ctx.Logger.WithName(controllerNameShort),
 	}
-	r := vmReconciler{
+	r := ProxmoxVMReconciler{
 		ControllerContext: controllerContext,
 		//VMService:         &services.VirtualMachineService{},
 	}
@@ -83,7 +83,7 @@ func AddVMControllerToManager(ctx *context.ControllerContext, mgr manager.Manage
 			&handler.EnqueueRequestForObject{},
 		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: ctx.MaxConcurrentReconciles}).
-		Build(r)
+		Build(&r)
 	if err != nil {
 		return err
 	}
@@ -130,14 +130,15 @@ func AddVMControllerToManager(ctx *context.ControllerContext, mgr manager.Manage
 	return nil
 }
 
-type vmReconciler struct {
+type ProxmoxVMReconciler struct {
 	*context.ControllerContext
-
+	ctrlclient.Client
+	Scheme    *runtime.Scheme
 	VMService services.VirtualMachineService
 }
 
 // Reconcile ensures the back-end state reflects the Kubernetes resource state intent.
-func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *ProxmoxVMReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	// Get the ProxmoxVM resource for this request.
 	proxmoxVM := &infrav1.ProxmoxVM{}
 	if err := r.Client.Get(r, req.NamespacedName, proxmoxVM); err != nil {
@@ -264,7 +265,7 @@ func (r vmReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (_ ctrl.Res
 //
 // This logic was moved to a smaller function outside the main Reconcile() loop
 // for the ease of testing.
-func (r vmReconciler) reconcile(ctx *context.VMContext) (reconcile.Result, error) {
+func (r *ProxmoxVMReconciler) reconcile(ctx *context.VMContext) (reconcile.Result, error) {
 	// Handle deleted machines
 	if !ctx.ProxmoxVM.ObjectMeta.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx)
@@ -274,7 +275,7 @@ func (r vmReconciler) reconcile(ctx *context.VMContext) (reconcile.Result, error
 	return r.reconcileNormal(ctx)
 }
 
-func (r vmReconciler) reconcileDelete(ctx *context.VMContext) (reconcile.Result, error) {
+func (r *ProxmoxVMReconciler) reconcileDelete(ctx *context.VMContext) (reconcile.Result, error) {
 	ctx.Logger.Info("Handling deleted ProxmoxVM")
 
 	conditions.MarkFalse(ctx.ProxmoxVM, infrav1.VMProvisionedCondition, clusterv1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
@@ -309,7 +310,7 @@ func (r vmReconciler) reconcileDelete(ctx *context.VMContext) (reconcile.Result,
 // This is necessary since CAPI does not the nodeRef field on the owner Machine object
 // until the node moves to Ready state. Hence, on Machine deletion it is unable to delete
 // the kubernetes node corresponding to the VM.
-func (r vmReconciler) deleteNode(ctx *context.VMContext, name string) error {
+func (r *ProxmoxVMReconciler) deleteNode(ctx *context.VMContext, name string) error {
 	// Fetching the cluster object from the ProxmoxVM object to create a remote client to the cluster
 	cluster, err := clusterutilv1.GetClusterFromMetadata(r.ControllerContext, r.Client, ctx.ProxmoxVM.ObjectMeta)
 	if err != nil {
@@ -329,7 +330,7 @@ func (r vmReconciler) deleteNode(ctx *context.VMContext, name string) error {
 	return clusterClient.Delete(ctx, node)
 }
 
-func (r vmReconciler) reconcileNormal(ctx *context.VMContext) (reconcile.Result, error) {
+func (r *ProxmoxVMReconciler) reconcileNormal(ctx *context.VMContext) (reconcile.Result, error) {
 	if ctx.ProxmoxVM.Status.FailureReason != nil || ctx.ProxmoxVM.Status.FailureMessage != nil {
 		r.Logger.Info("VM is failed, won't reconcile", "namespace", ctx.ProxmoxVM.Namespace, "name", ctx.ProxmoxVM.Name)
 		return reconcile.Result{}, nil
@@ -393,7 +394,7 @@ func (r vmReconciler) reconcileNormal(ctx *context.VMContext) (reconcile.Result,
 // to be allocated.
 // It checks the state of both DHCP4 and DHCP6 for all the network devices and if
 // any static IP addresses or IPAM Pools are specified.
-func (r vmReconciler) isWaitingForStaticIPAllocation(ctx *context.VMContext) bool {
+func (r *ProxmoxVMReconciler) isWaitingForStaticIPAllocation(ctx *context.VMContext) bool {
 	devices := ctx.ProxmoxVM.Spec.Network.Devices
 	for _, dev := range devices {
 		if !dev.DHCP4 && !dev.DHCP6 && len(dev.IPAddrs) == 0 && len(dev.AddressesFromPools) == 0 {
@@ -405,7 +406,7 @@ func (r vmReconciler) isWaitingForStaticIPAllocation(ctx *context.VMContext) boo
 	return false
 }
 
-func (r vmReconciler) reconcileNetwork(ctx *context.VMContext, vm infrav1.VirtualMachine) {
+func (r *ProxmoxVMReconciler) reconcileNetwork(ctx *context.VMContext, vm infrav1.VirtualMachine) {
 	ctx.ProxmoxVM.Status.Network = vm.Network
 	ipAddrs := make([]string, 0, len(vm.Network))
 	for _, netStatus := range ctx.ProxmoxVM.Status.Network {
@@ -414,7 +415,7 @@ func (r vmReconciler) reconcileNetwork(ctx *context.VMContext, vm infrav1.Virtua
 	ctx.ProxmoxVM.Status.Addresses = ipAddrs
 }
 
-func (r vmReconciler) clusterToProxmoxVMs(a ctrlclient.Object) []reconcile.Request {
+func (r *ProxmoxVMReconciler) clusterToProxmoxVMs(a ctrlclient.Object) []reconcile.Request {
 	requests := []reconcile.Request{}
 	vms := &infrav1.ProxmoxVMList{}
 	err := r.Client.List(goctx.Background(), vms, ctrlclient.MatchingLabels(
@@ -437,7 +438,7 @@ func (r vmReconciler) clusterToProxmoxVMs(a ctrlclient.Object) []reconcile.Reque
 	return requests
 }
 
-func (r vmReconciler) proxmoxClusterToProxmoxVMs(a ctrlclient.Object) []reconcile.Request {
+func (r *ProxmoxVMReconciler) proxmoxClusterToProxmoxVMs(a ctrlclient.Object) []reconcile.Request {
 	proxmoxCluster, ok := a.(*infrav1.ProxmoxCluster)
 	if !ok {
 		return nil
@@ -469,7 +470,7 @@ func (r vmReconciler) proxmoxClusterToProxmoxVMs(a ctrlclient.Object) []reconcil
 	return requests
 }
 
-func (r vmReconciler) ipAddressClaimToProxmoxVM(a ctrlclient.Object) []reconcile.Request {
+func (r *ProxmoxVMReconciler) ipAddressClaimToProxmoxVM(a ctrlclient.Object) []reconcile.Request {
 	ipAddressClaim, ok := a.(*ipamv1.IPAddressClaim)
 	if !ok {
 		return nil
@@ -492,7 +493,7 @@ func (r vmReconciler) ipAddressClaimToProxmoxVM(a ctrlclient.Object) []reconcile
 	return requests
 }
 
-func (r vmReconciler) retrieveProxmoxSession(ctx goctx.Context, proxmoxVM *infrav1.ProxmoxVM) (*session.Session, error) {
+func (r *ProxmoxVMReconciler) retrieveProxmoxSession(ctx goctx.Context, proxmoxVM *infrav1.ProxmoxVM) (*session.Session, error) {
 	// Get cluster object and then get ProxmoxCluster object
 
 	params := session.NewParams().

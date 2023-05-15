@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -32,12 +33,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-type clusterReconciler struct {
+type ProxmoxClusterReconciler struct {
 	*context.ControllerContext
+	client.Client
+	Scheme *runtime.Scheme
 }
 
 // Reconcile ensures the back-end state reflects the Kubernetes resource state intent.
-func (r clusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *ProxmoxClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
 	// Get the ProxmoxCluster resource for this request.
 	proxmoxCluster := &infrav1.ProxmoxCluster{}
 	if err := r.Client.Get(r, req.NamespacedName, proxmoxCluster); err != nil {
@@ -107,7 +110,7 @@ func (r clusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.
 	return r.reconcileNormal(clusterContext)
 }
 
-func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconcile.Result, error) {
+func (r *ProxmoxClusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconcile.Result, error) {
 	ctx.Logger.Info("Reconciling ProxmoxCluster delete")
 
 	proxmoxMachines, err := infrautilv1.GetProxmoxMachinesInCluster(ctx, ctx.Client, ctx.Cluster.Namespace, ctx.Cluster.Name)
@@ -178,7 +181,7 @@ func (r clusterReconciler) reconcileDelete(ctx *context.ClusterContext) (reconci
 	return reconcile.Result{}, nil
 }
 
-func (r clusterReconciler) reconcileNormal(ctx *context.ClusterContext) (reconcile.Result, error) {
+func (r *ProxmoxClusterReconciler) reconcileNormal(ctx *context.ClusterContext) (reconcile.Result, error) {
 	ctx.Logger.Info("Reconciling ProxmoxCluster")
 
 	// If the ProxmoxCluster doesn't have our finalizer, add it.
@@ -236,7 +239,7 @@ func (r clusterReconciler) reconcileNormal(ctx *context.ClusterContext) (reconci
 	return reconcile.Result{}, nil
 }
 
-func (r clusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) error {
+func (r *ProxmoxClusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) error {
 	proxmoxCluster := ctx.ProxmoxCluster
 	if identity.IsSecretIdentity(proxmoxCluster) {
 		secret := &apiv1.Secret{}
@@ -275,7 +278,7 @@ func (r clusterReconciler) reconcileIdentitySecret(ctx *context.ClusterContext) 
 	return nil
 }
 
-func (r clusterReconciler) reconcileProxmoxConnectivity(ctx *context.ClusterContext) (*session.Session, error) {
+func (r *ProxmoxClusterReconciler) reconcileProxmoxConnectivity(ctx *context.ClusterContext) (*session.Session, error) {
 	params := session.NewParams().
 		WithServer(ctx.ProxmoxCluster.Spec.Server).
 		WithThumbprint(ctx.ProxmoxCluster.Spec.Thumbprint).
@@ -298,7 +301,7 @@ func (r clusterReconciler) reconcileProxmoxConnectivity(ctx *context.ClusterCont
 	return session.GetOrCreate(ctx, params)
 }
 
-func (r clusterReconciler) reconcileProxmoxVersion(ctx *context.ClusterContext, s *session.Session) error {
+func (r *ProxmoxClusterReconciler) reconcileProxmoxVersion(ctx *context.ClusterContext, s *session.Session) error {
 	version, err := s.GetVersion()
 	if err != nil {
 		return err
@@ -307,7 +310,7 @@ func (r clusterReconciler) reconcileProxmoxVersion(ctx *context.ClusterContext, 
 	return nil
 }
 
-func (r clusterReconciler) reconcileDeploymentZones(ctx *context.ClusterContext) (bool, error) {
+func (r *ProxmoxClusterReconciler) reconcileDeploymentZones(ctx *context.ClusterContext) (bool, error) {
 	var deploymentZoneList infrav1.ProxmoxDeploymentZoneList
 	err := r.Client.List(ctx, &deploymentZoneList)
 	if err != nil {
@@ -375,7 +378,7 @@ var (
 	apiServerTriggersMu sync.Mutex
 )
 
-func (r clusterReconciler) reconcileProxmoxClusterWhenAPIServerIsOnline(ctx *context.ClusterContext) {
+func (r *ProxmoxClusterReconciler) reconcileProxmoxClusterWhenAPIServerIsOnline(ctx *context.ClusterContext) {
 	if conditions.IsTrue(ctx.Cluster, clusterv1.ControlPlaneInitializedCondition) {
 		ctx.Logger.Info("skipping reconcile when API server is online",
 			"reason", "controlPlaneInitialized")
@@ -412,7 +415,7 @@ func (r clusterReconciler) reconcileProxmoxClusterWhenAPIServerIsOnline(ctx *con
 	}()
 }
 
-func (r clusterReconciler) isAPIServerOnline(ctx *context.ClusterContext) bool {
+func (r *ProxmoxClusterReconciler) isAPIServerOnline(ctx *context.ClusterContext) bool {
 	if kubeClient, err := infrautilv1.NewKubeClient(ctx, ctx.Client, ctx.Cluster); err == nil {
 		if _, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{}); err == nil {
 			// The target cluster is online. To make sure the correct control
@@ -438,7 +441,7 @@ func (r clusterReconciler) isAPIServerOnline(ctx *context.ClusterContext) bool {
 	return false
 }
 
-func (r clusterReconciler) isControlPlaneInitialized(ctx *context.ClusterContext) bool {
+func (r *ProxmoxClusterReconciler) isControlPlaneInitialized(ctx *context.ClusterContext) bool {
 	cluster := &clusterv1.Cluster{}
 	clusterKey := client.ObjectKey{Namespace: ctx.Cluster.Namespace, Name: ctx.Cluster.Name}
 	if err := ctx.Client.Get(ctx, clusterKey, cluster); err != nil {
@@ -486,7 +489,7 @@ func setOwnerRefsOnProxmoxMachines(ctx *context.ClusterContext) error {
 // controlPlaneMachineToCluster is a handler.ToRequestsFunc to be used
 // to enqueue requests for reconciliation for ProxmoxCluster to update
 // its status.apiEndpoints field.
-func (r clusterReconciler) controlPlaneMachineToCluster(o client.Object) []ctrl.Request {
+func (r *ProxmoxClusterReconciler) controlPlaneMachineToCluster(o client.Object) []ctrl.Request {
 	proxmoxMachine, ok := o.(*infrav1.ProxmoxMachine)
 	if !ok {
 		r.Logger.Error(nil, fmt.Sprintf("expected a ProxmoxMachine but got a %T", o))
@@ -548,7 +551,7 @@ func (r clusterReconciler) controlPlaneMachineToCluster(o client.Object) []ctrl.
 	}}
 }
 
-func (r clusterReconciler) deploymentZoneToCluster(o client.Object) []ctrl.Request {
+func (r *ProxmoxClusterReconciler) deploymentZoneToCluster(o client.Object) []ctrl.Request {
 	var requests []ctrl.Request
 	obj, ok := o.(*infrav1.ProxmoxDeploymentZone)
 	if !ok {
@@ -575,4 +578,11 @@ func (r clusterReconciler) deploymentZoneToCluster(o client.Object) []ctrl.Reque
 		}
 	}
 	return requests
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *ProxmoxClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&infrav1.ProxmoxCluster{}).
+		Complete(r)
 }
