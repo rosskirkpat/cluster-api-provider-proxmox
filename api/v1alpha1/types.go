@@ -180,7 +180,7 @@ type ProxmoxMachineTemplateResource struct {
 // ProxmoxMachineProviderConditionType is a valid value for ProxmoxMachineProviderCondition.Type
 type ProxmoxMachineProviderConditionType string
 
-// Valid conditions for an Proxmox machine instance
+// Valid conditions for a Proxmox machine instance
 const (
 	// MachineCreated indicates whether the machine has been created or not. If not,
 	// it should include a reason and message for the failure.
