@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// GetProxmoxMachinesInCluster gets a cluster's ProxmoxMachine resources.
+// GetProxmoxMachinesInCluster gets a ProxmoxCluster's ProxmoxMachine resources.
 func GetProxmoxMachinesInCluster(
 	ctx context.Context,
 	controllerClient client.Client,
@@ -142,7 +142,7 @@ func GetMachineMetadata(hostname string, proxmoxVM infrav1.ProxmoxVM, ipamState 
 
 	// Add the MAC Address to the network device
 	// networkStatuses may be longer than devices
-	// and we want to add all the networks
+	// we want to add all the networks
 	for i, status := range networkStatuses {
 		devices[i].MACAddr = status.MACAddr
 	}

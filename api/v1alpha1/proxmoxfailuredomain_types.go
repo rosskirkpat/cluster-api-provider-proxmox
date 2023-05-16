@@ -26,15 +26,15 @@ type ProxmoxFailureDomainSpec struct {
 }
 
 type FailureDomain struct {
-	// Name is the name of the tag that represents this failure domain
+	// Name is the name of the pool that represents this failure domain
 	Name string `json:"name"`
 
 	// Type is the type of failure domain, the current values are "Datacenter", "ComputeCluster" and "HostGroup"
 	// +kubebuilder:validation:Enum=Datacenter;ComputeCluster;HostGroup
 	Type FailureDomainType `json:"type"`
 
-	// TagCategory is the category used for the tag
-	TagCategory string `json:"tagCategory"`
+	// PoolCategory is the category used for the pool
+	PoolCategory string `json:"poolCategory"`
 
 	// AutoConfigure tags the Type which is specified in the Topology
 	AutoConfigure *bool `json:"autoConfigure,omitempty"`
@@ -64,11 +64,14 @@ type Topology struct {
 }
 
 type FailureDomainHosts struct {
-	// VMGroupName is the name of the VM group
-	VMGroupName string `json:"vmGroupName"`
+	// ClusterVMGroupName is the name of the Cluster VM group
+	ClusterVMGroupName string `json:"clusterCMGroupName"`
 
-	// HostGroupName is the name of the Host group
-	HostGroupName string `json:"hostGroupName"`
+	// HAGroupName is the name of the HA group
+	HAGroupName string `json:"haGroupName"`
+
+	// Pool is the name of the Proxmox Cluster pool
+	Pool string `json:"pool,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -15,6 +15,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+const ProviderUserAgent = "k8s-cappx-useragent"
+
 var (
 	// global Session map against sessionKeys in map[sessionKey]Session.
 	sessionCache sync.Map
@@ -27,7 +29,6 @@ var (
 // Session is a Proxmox session with a configured Cluster.
 type Session struct {
 	*proxmox.Client
-	Cluster *proxmox.Cluster
 }
 
 type Feature struct {
@@ -127,6 +128,8 @@ func GetOrCreate(ctx context.Context, params *Params) (*Session, error) {
 
 func newClient(ctx context.Context, logger logr.Logger, sessionKey string, url *url.URL, thumbprint string, feature Feature) (*proxmox.Client, error) {
 	client := proxmox.NewClient(url.Host)
+	//proxmox.WithUserAgent(ProviderUserAgent)
+
 	if client == nil {
 		return nil, errors.Errorf("error creating Proxmox client for %q", url.Host)
 	}
@@ -136,11 +139,6 @@ func newClient(ctx context.Context, logger logr.Logger, sessionKey string, url *
 	//	client.SetThumbprint(url.Host, thumbprint)
 	//}
 
-	// TODO add user agent field to go-proxmox client
-	//client.UserAgent = "k8s-cappx-useragent"
-
-	// TODO implement keep alive for go-proxmox client
-	//if feature.EnableKeepAlive {}
 	pw, ok := url.User.Password()
 	if !ok {
 		return nil, errors.Errorf("empty password supplied for proxmox user %s", url.User.Username())

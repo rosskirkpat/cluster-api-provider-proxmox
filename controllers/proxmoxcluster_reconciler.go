@@ -45,7 +45,7 @@ func (r *ProxmoxClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) 
 	proxmoxCluster := &infrav1.ProxmoxCluster{}
 	if err := r.Client.Get(r, req.NamespacedName, proxmoxCluster); err != nil {
 		if apierrors.IsNotFound(err) {
-			r.Logger.V(4).Info("ProxmoxCluster not found, won't reconcile", "key", req.NamespacedName)
+			r.Logger.V(4).Info("ProxmoxCluster not found, unable to reconcile", "key", req.NamespacedName)
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, err

@@ -11,6 +11,48 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-proxmoxdeploymentzone
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: default.proxmoxdeploymentzone.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - proxmoxdeploymentzones
+  sideEffects: None
+- admissionReviewVersions:
+  - v1alpha1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxfailuredomain
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: default.proxmoxfailuredomain.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - proxmoxfailuredomains
+  sideEffects: None
+- admissionReviewVersions:
+  - v1alpha1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxmachine
   failurePolicy: Fail
   matchPolicy: Equivalent
@@ -74,6 +116,27 @@ webhooks:
     - UPDATE
     resources:
     - proxmoxclustertemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1alpha1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxfailuredomain
+  failurePolicy: Fail
+  matchPolicy: Equivalent
+  name: validation.proxmoxfailuredomain.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - proxmoxfailuredomains
   sideEffects: None
 - admissionReviewVersions:
   - v1alpha1

@@ -151,6 +151,38 @@ const (
 )
 
 const (
+	// ProxmoxFailureDomainValidatedCondition documents whether the failure domain for the deployment zone is configured correctly or not.
+	ProxmoxFailureDomainValidatedCondition clusterv1.ConditionType = "ProxmoxFailureDomainValidated"
+
+	// RegionMisconfiguredReason (Severity=Error) documents that the region for the Failure Domain associated to
+	// the ProxmoxDeploymentZone is misconfigured.
+	RegionMisconfiguredReason = "FailureDomainRegionMisconfigured"
+
+	// ZoneMisconfiguredReason (Severity=Error) documents that the zone for the Failure Domain associated to
+	// the ProxmoxDeploymentZone is misconfigured.
+	ZoneMisconfiguredReason = "FailureDomainZoneMisconfigured"
+
+	// ComputeClusterNotFoundReason (Severity=Error) documents that the Compute Cluster for the Failure Domain
+	// associated to the ProxmoxDeploymentZone cannot be found.
+	ComputeClusterNotFoundReason = "ComputeClusterNotFound"
+
+	// HostsMisconfiguredReason (Severity=Error) documents that the VM & Host Group details for the Failure Domain
+	// associated to the ProxmoxDeploymentZone are misconfigured.
+	HostsMisconfiguredReason = "HostsMisconfigured"
+
+	// HostsAffinityMisconfiguredReason (Severity=Warning) documents that the VM & Host Group affinity rule for the FailureDomain is disabled.
+	HostsAffinityMisconfiguredReason = "HostsAffinityMisconfigured"
+
+	// NetworkNotFoundReason (Severity=Error) documents that the networks in the topology for the Failure Domain
+	// associated to the ProxmoxDeploymentZone are misconfigured.
+	NetworkNotFoundReason = "NetworkNotFound"
+
+	// DatastoreNotFoundReason (Severity=Error) documents that the datastore in the topology for the Failure Domain
+	// associated to the ProxmoxDeploymentZone is misconfigured.
+	DatastoreNotFoundReason = "DatastoreNotFound"
+)
+
+const (
 	// IPAddressClaimedCondition documents the status of claiming an IP address
 	// from an IPAM provider.
 	IPAddressClaimedCondition clusterv1.ConditionType = "IPAddressClaimed"

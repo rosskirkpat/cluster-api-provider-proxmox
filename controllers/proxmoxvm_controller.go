@@ -61,6 +61,7 @@ func AddVMControllerToManager(ctx *context.ControllerContext, mgr manager.Manage
 
 	// Build the controller context.
 	controllerContext := &context.ControllerContext{
+		Context:  ctx,
 		Name:     controllerNameShort,
 		Recorder: record.New(mgr.GetEventRecorderFor(controllerNameLong)),
 		Logger:   ctx.Logger.WithName(controllerNameShort),
@@ -68,6 +69,7 @@ func AddVMControllerToManager(ctx *context.ControllerContext, mgr manager.Manage
 	r := ProxmoxVMReconciler{
 		ControllerContext: controllerContext,
 		//VMService:         &services.VirtualMachineService{},
+		//	TODO fix VMService
 	}
 
 	controller, err := ctrl.NewControllerManagedBy(mgr).

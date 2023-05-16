@@ -46,11 +46,11 @@ spec:
                       the Topology
                     type: boolean
                   name:
-                    description: Name is the name of the tag that represents this
+                    description: Name is the name of the pool that represents this
                       failure domain
                     type: string
-                  tagCategory:
-                    description: TagCategory is the category used for the tag
+                  poolCategory:
+                    description: PoolCategory is the category used for the pool
                     type: string
                   type:
                     description: Type is the type of failure domain, the current values
@@ -62,7 +62,7 @@ spec:
                     type: string
                 required:
                 - name
-                - tagCategory
+                - poolCategory
                 - type
                 type: object
               topology:
@@ -83,15 +83,19 @@ spec:
                     description: Hosts has information required for placement of machines
                       on Proxmox hosts.
                     properties:
-                      hostGroupName:
-                        description: HostGroupName is the name of the Host group
+                      clusterCMGroupName:
+                        description: ClusterVMGroupName is the name of the Cluster
+                          VM group
                         type: string
-                      vmGroupName:
-                        description: VMGroupName is the name of the VM group
+                      haGroupName:
+                        description: HAGroupName is the name of the HA group
+                        type: string
+                      pool:
+                        description: Pool is the name of the Proxmox Cluster pool
                         type: string
                     required:
-                    - hostGroupName
-                    - vmGroupName
+                    - clusterCMGroupName
+                    - haGroupName
                     type: object
                   networks:
                     description: Networks is the list of networks within this failure
@@ -110,11 +114,11 @@ spec:
                       the Topology
                     type: boolean
                   name:
-                    description: Name is the name of the tag that represents this
+                    description: Name is the name of the pool that represents this
                       failure domain
                     type: string
-                  tagCategory:
-                    description: TagCategory is the category used for the tag
+                  poolCategory:
+                    description: PoolCategory is the category used for the pool
                     type: string
                   type:
                     description: Type is the type of failure domain, the current values
@@ -126,7 +130,7 @@ spec:
                     type: string
                 required:
                 - name
-                - tagCategory
+                - poolCategory
                 - type
                 type: object
             required:
