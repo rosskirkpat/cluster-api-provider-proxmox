@@ -28,12 +28,12 @@ type ProxmoxVMSpec struct {
 	// +optional
 	BootstrapRef *corev1.ObjectReference `json:"bootstrapRef,omitempty"`
 
-	// BiosUUID is the VM's BIOS UUID that is assigned at runtime after
+	// VMID is the VM's unique ID that is assigned at runtime after
 	// the VM has been created.
 	// This field is required at runtime for other controllers that read
 	// this CRD as unstructured data.
 	// +optional
-	BiosUUID string `json:"biosUUID,omitempty"`
+	VMID string `json:"biosUUID,omitempty"`
 }
 
 // ProxmoxVMStatus defines the observed state of ProxmoxVM
@@ -71,11 +71,17 @@ type ProxmoxVMStatus struct {
 	// +optional
 	RetryAfter metav1.Time `json:"retryAfter,omitempty"`
 
-	// TaskRef is a managed object reference to a Task related to the machine.
+	// TaskRef is a proxmox reference to a Task related to the machine.
 	// This value is set automatically at runtime and should not be set or
 	// modified by users.
 	// +optional
 	TaskRef string `json:"taskRef,omitempty"`
+
+	// VmIdRef is a proxmox reference to a VM ID related to the machine.
+	// This value is set automatically at runtime and should not be set or
+	// modified by users.
+	// +optional
+	VmIdRef int `json:"vmIdRef,omitempty"`
 
 	// Network returns the network status for each of the machine's configured
 	// network interfaces.

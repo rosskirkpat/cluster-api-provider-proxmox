@@ -12,7 +12,6 @@ import (
 // VMContext is a Go context used with a ProxmoxVM.
 type VMContext struct {
 	*ControllerContext
-	ClusterModuleInfo    *string
 	ProxmoxVM            *infrav1.ProxmoxVM
 	PatchHelper          *patch.Helper
 	Logger               logr.Logger

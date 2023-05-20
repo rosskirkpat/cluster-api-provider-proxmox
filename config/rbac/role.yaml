@@ -269,7 +269,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - vmware.infrastructure.cluster.x-k8s.io
+  - proxmox.infrastructure.cluster.x-k8s.io
   resources:
   - proxmoxmachines
   verbs:
@@ -281,7 +281,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - vmware.infrastructure.cluster.x-k8s.io
+  - proxmox.infrastructure.cluster.x-k8s.io
   resources:
   - proxmoxmachines/status
   verbs:
@@ -289,7 +289,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - vmware.infrastructure.cluster.x-k8s.io
+  - proxmox.infrastructure.cluster.x-k8s.io
   resources:
   - proxmoxmachinetemplates
   verbs:
@@ -301,7 +301,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - vmware.infrastructure.cluster.x-k8s.io
+  - proxmox.infrastructure.cluster.x-k8s.io
   resources:
   - proxmoxmachinetemplates/status
   verbs:

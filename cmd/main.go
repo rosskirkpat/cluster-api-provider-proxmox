@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	context2 "context"
 	"flag"
 	"fmt"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/context"
@@ -41,8 +42,10 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme           = runtime.NewScheme()
+	setupLog         = ctrl.Log.WithName("setup")
+	ManagerNamespace = "cluster-api-provider-proxmox-system"
+	ManagerName      = "cluster-api-provider-proxmox-manager"
 )
 
 func init() {
@@ -97,75 +100,79 @@ func main() {
 		os.Exit(1)
 	}
 
-	_ = func(ctx *context.ControllerContext, mgr ctrl.Manager) {
-		cluster := &infrastructurev1alpha1.ProxmoxCluster{}
-		gvr := infrastructurev1alpha1.GroupVersion.WithResource(reflect.TypeOf(cluster).Elem().Name())
-		_, err := mgr.GetRESTMapper().KindFor(gvr)
-		if err != nil {
-			if meta.IsNoMatchError(err) {
-				setupLog.Info(fmt.Sprintf("CRD for %s not loaded, skipping.", gvr.String()))
-			} else {
-				setupLog.Error(err, fmt.Sprintf("unexpected error while looking for CRD %s", gvr.String()), "crd", "ProxmoxCluster")
-				os.Exit(1)
-			}
+	ctx := &context.ControllerContext{
+		Context:   context2.Background(),
+		Namespace: ManagerNamespace,
+		Name:      ManagerName,
+		Logger:    ctrl.Log,
+	}
+	cluster := &infrastructurev1alpha1.ProxmoxCluster{}
+	gvr := infrastructurev1alpha1.GroupVersion.WithResource(reflect.TypeOf(cluster).Elem().Name())
+	_, err = mgr.GetRESTMapper().KindFor(gvr)
+	if err != nil {
+		if meta.IsNoMatchError(err) {
+			setupLog.Info(fmt.Sprintf("CRD for %s not loaded, skipping.", gvr.String()))
 		} else {
-			if err := (&infrastructurev1alpha1.ProxmoxVM{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxVM")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxVMList{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxVMList")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxClusterTemplate")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxMachine{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachine")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxMachineTemplateWebhook{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineTemplateWebhook")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxMachineTemplateList{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineTemplateList")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxDeploymentZone{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxDeploymentZone")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxFailureDomain{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxFailureDomain")
-				os.Exit(1)
-			}
-			if err := (&infrastructurev1alpha1.ProxmoxMachineList{}).SetupWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineList")
-				os.Exit(1)
-			}
-			if err := controller.AddClusterControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxCluster{}); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", "ProxmoxCluster")
-				os.Exit(1)
-			}
-			if err := controller.AddMachineControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxMachine{}); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", "ProxmoxMachine")
-				os.Exit(1)
-			}
-			if err := controller.AddVMControllerToManager(ctx, mgr); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", "ProxmoxVM")
-				os.Exit(1)
-			}
-			if err := controller.AddProxmoxClusterIdentityControllerToManager(ctx, mgr); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", "ProxmoxClusterIdentity")
-				os.Exit(1)
-			}
-			if err := controller.AddProxmoxDeploymentZoneControllerToManager(ctx, mgr); err != nil {
-				setupLog.Error(err, "unable to create controller", "controller", "ProxmoxDeploymentZone")
-				os.Exit(1)
-			}
+			setupLog.Error(err, fmt.Sprintf("unexpected error while looking for CRD %s", gvr.String()), "crd", "ProxmoxCluster")
+			os.Exit(1)
 		}
+	}
+
+	if err := (&infrastructurev1alpha1.ProxmoxVM{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxVM")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxVMList{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxVMList")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxClusterTemplate")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxMachine{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachine")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxMachineTemplateWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineTemplateWebhook")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxMachineTemplateList{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineTemplateList")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxDeploymentZone{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxDeploymentZone")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxFailureDomain{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxFailureDomain")
+		os.Exit(1)
+	}
+	if err := (&infrastructurev1alpha1.ProxmoxMachineList{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineList")
+		os.Exit(1)
+	}
+	//if err := controller.AddClusterControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxCluster{}); err != nil {
+	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxCluster")
+	//	os.Exit(1)
+	//}
+	//if err := controller.AddMachineControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxMachine{}); err != nil {
+	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxMachine")
+	//	os.Exit(1)
+	//}
+	if err := controller.AddVMControllerToManager(ctx, mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxVM")
+		os.Exit(1)
+	}
+	if err := controller.AddProxmoxClusterIdentityControllerToManager(ctx, mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxClusterIdentity")
+		os.Exit(1)
+	}
+	if err := controller.AddProxmoxDeploymentZoneControllerToManager(ctx, mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxDeploymentZone")
+		os.Exit(1)
 	}
 
 	//+kubebuilder:scaffold:builder

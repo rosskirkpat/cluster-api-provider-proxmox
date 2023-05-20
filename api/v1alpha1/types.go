@@ -65,11 +65,20 @@ type VirtualMachineCloneSpec struct {
 	// +optional
 	CloneMode CloneMode `json:"cloneMode,omitempty"`
 
+	// FullCloneFormat is name of the target format for file storage when performing a full clone
+	// valid options are:
+	// raw, qcow2, vmdk
+	// +optional
+	FullCloneFormat string `json:"fullCloneFormat,omitempty"`
+
 	// Snapshot is the name of the snapshot from which to create a linked clone.
 	// This field is ignored if LinkedClone is not enabled.
 	// Defaults to the source's current snapshot.
 	// +optional
 	Snapshot string `json:"snapshot,omitempty"`
+
+	// CloneId is the unique VM ID that will be cloned
+	CloneId string `json:"cloneId,omitempty"`
 
 	// Server is the IP address or FQDN of the Proxmox server on which
 	// the virtual machine is created/located.
@@ -443,8 +452,8 @@ type VirtualMachine struct {
 	// Name is the VM's name.
 	Name string `json:"name"`
 
-	// BiosUUID is the VM's BIOS UUID.
-	BiosUUID string `json:"biosUUID"`
+	// VMID is the VM's ID.
+	VMID string `json:"biosUUID"`
 
 	// State is the VM's state.
 	State VirtualMachineState `json:"state"`

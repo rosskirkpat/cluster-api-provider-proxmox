@@ -3,9 +3,6 @@ package controllers
 import (
 	goctx "context"
 	"fmt"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/identity"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/session"
-	"k8s.io/apimachinery/pkg/runtime"
 	"reflect"
 	"strings"
 	"time"
@@ -13,12 +10,15 @@ import (
 	"github.com/pkg/errors"
 	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/context"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/identity"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/record"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/services"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/session"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/util"
 	apiv1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apitypes "k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/controllers/remote"
@@ -68,8 +68,7 @@ func AddVMControllerToManager(ctx *context.ControllerContext, mgr manager.Manage
 	}
 	r := ProxmoxVMReconciler{
 		ControllerContext: controllerContext,
-		//VMService:         &services.VirtualMachineService{},
-		//	TODO fix VMService
+		VMService:         &services.VMService{},
 	}
 
 	controller, err := ctrl.NewControllerManagedBy(mgr).
@@ -367,11 +366,11 @@ func (r *ProxmoxVMReconciler) reconcileNormal(ctx *context.VMContext) (reconcile
 	}
 
 	// Update the ProxmoxVM's BIOS UUID.
-	ctx.Logger.Info("vm bios-uuid", "biosuuid", vm.BiosUUID)
+	ctx.Logger.Info("vm bios-uuid", "biosuuid", vm.VMID)
 
 	// defensive check to ensure we are not removing the biosUUID
-	if vm.BiosUUID != "" {
-		ctx.ProxmoxVM.Spec.BiosUUID = vm.BiosUUID
+	if vm.VMID != "" {
+		ctx.ProxmoxVM.Spec.VMID = vm.VMID
 	} else {
 		return reconcile.Result{}, errors.Errorf("bios uuid is empty while VM is ready")
 	}

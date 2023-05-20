@@ -63,7 +63,7 @@ func (r *ProxmoxVMReconciler) reconcileIPAddressClaims(ctx *context.VMContext) e
 			}
 
 			// Since this is eventually used to calculate the status of the
-			// IPAddressClaimed condition for the VSphereVM object.
+			// IPAddressClaimed condition for the ProxmoxVM object.
 			if conditions.Has(ipAddrClaim, clusterv1.ReadyCondition) {
 				claims = append(claims, ipAddrClaim)
 			}

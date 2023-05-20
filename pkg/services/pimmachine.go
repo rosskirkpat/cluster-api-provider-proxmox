@@ -376,7 +376,7 @@ func (v *PimMachineService) createOrPatchProxmoxVM(ctx *context.PIMMachineContex
 			vm.Spec.Thumbprint = ctx.ProxmoxCluster.Spec.Thumbprint
 		}
 		if proxmoxVM != nil {
-			vm.Spec.BiosUUID = proxmoxVM.Spec.BiosUUID
+			vm.Spec.VMID = proxmoxVM.Spec.VMID
 		}
 		return nil
 	}

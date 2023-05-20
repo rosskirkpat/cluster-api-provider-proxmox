@@ -44,10 +44,10 @@ const hostInfoErrStr = "host info cannot be used as a label value"
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxmachines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/finalizers,verbs=update
-// +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachines,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachinetemplates,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=vmware.infrastructure.cluster.x-k8s.io,resources=proxmoxmachinetemplates/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=proxmox.infrastructure.cluster.x-k8s.io,resources=proxmoxmachines,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=proxmox.infrastructure.cluster.x-k8s.io,resources=proxmoxmachines/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=proxmox.infrastructure.cluster.x-k8s.io,resources=proxmoxmachinetemplates,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=proxmox.infrastructure.cluster.x-k8s.io,resources=proxmoxmachinetemplates/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=nodes;events;configmaps,verbs=get;list;watch;create;update;patch;delete
