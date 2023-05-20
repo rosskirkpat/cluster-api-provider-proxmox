@@ -487,7 +487,7 @@ func (vms *VMService) reconcileVMGroupInfo(ctx *virtualMachineContext) (bool, er
 	}
 
 	hasVM := false
-	vmCtx := getVMContext(ctx)
+	vmCtx := getCapiVMContext(ctx)
 	var vm *proxmox.VirtualMachine
 	for _, node := range cluster.Nodes {
 		vm, err := fetchVMByClusterResource(vmCtx, node.ID)
@@ -1163,7 +1163,7 @@ func ErrOnLocalOnlyIPAddr(addr string) error {
 	return nil
 }
 
-func getVMContext(ctx *virtualMachineContext) *context.VMContext {
+func getCapiVMContext(ctx *virtualMachineContext) *context.VMContext {
 	return &context.VMContext{
 		ControllerContext:    ctx.ControllerContext,
 		ProxmoxVM:            ctx.ProxmoxVM,

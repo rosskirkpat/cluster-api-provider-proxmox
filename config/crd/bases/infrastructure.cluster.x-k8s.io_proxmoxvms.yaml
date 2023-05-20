@@ -46,7 +46,7 @@ spec:
                   type: integer
                 type: array
               biosUUID:
-                description: BiosUUID is the VM's BIOS UUID that is assigned at runtime
+                description: VMID is the VM's unique ID that is assigned at runtime
                   after the VM has been created. This field is required at runtime
                   for other controllers that read this CRD as unstructured data.
                 type: string
@@ -89,6 +89,9 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              cloneId:
+                description: CloneId is the unique VM ID that will be cloned
+                type: string
               cloneMode:
                 description: CloneMode specifies the type of clone operation. The
                   LinkedClone mode is only support for templates that have at least
@@ -116,6 +119,11 @@ spec:
               folder:
                 description: Folder is the name or inventory path of the folder in
                   which the virtual machine is created/located.
+                type: string
+              fullCloneFormat:
+                description: 'FullCloneFormat is name of the target format for file
+                  storage when performing a full clone valid options are: raw, qcow2,
+                  vmdk'
                 type: string
               hardwareVersion:
                 description: HardwareVersion is the hardware version of the virtual
@@ -598,10 +606,15 @@ spec:
                   was cloned if LinkedMode is enabled.
                 type: string
               taskRef:
-                description: TaskRef is a managed object reference to a Task related
-                  to the machine. This value is set automatically at runtime and should
-                  not be set or modified by users.
+                description: TaskRef is a proxmox reference to a Task related to the
+                  machine. This value is set automatically at runtime and should not
+                  be set or modified by users.
                 type: string
+              vmIdRef:
+                description: VmIdRef is a proxmox reference to a VM ID related to
+                  the machine. This value is set automatically at runtime and should
+                  not be set or modified by users.
+                type: integer
             type: object
         type: object
     served: true

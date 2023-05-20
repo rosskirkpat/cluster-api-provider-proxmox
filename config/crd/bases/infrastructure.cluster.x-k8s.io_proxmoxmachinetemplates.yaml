@@ -76,6 +76,9 @@ spec:
                           format: int32
                           type: integer
                         type: array
+                      cloneId:
+                        description: CloneId is the unique VM ID that will be cloned
+                        type: string
                       cloneMode:
                         description: CloneMode specifies the type of clone operation.
                           The LinkedClone mode is only support for templates that
@@ -110,6 +113,11 @@ spec:
                       folder:
                         description: Folder is the name or inventory path of the folder
                           in which the virtual machine is created/located.
+                        type: string
+                      fullCloneFormat:
+                        description: 'FullCloneFormat is name of the target format
+                          for file storage when performing a full clone valid options
+                          are: raw, qcow2, vmdk'
                         type: string
                       hardwareVersion:
                         description: HardwareVersion is the hardware version of the

@@ -11,7 +11,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-proxmoxdeploymentzone
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxdeploymentzone
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.proxmoxdeploymentzone.infrastructure.cluster.x-k8s.io

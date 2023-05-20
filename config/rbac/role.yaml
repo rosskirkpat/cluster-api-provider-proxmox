@@ -253,22 +253,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - topology.proxmox.com
-  resources:
-  - availabilityzones
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - topology.proxmox.com
-  resources:
-  - availabilityzones/status
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - proxmox.infrastructure.cluster.x-k8s.io
   resources:
   - proxmoxmachines
@@ -308,3 +292,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - topology.proxmox.com
+  resources:
+  - availabilityzones
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - topology.proxmox.com
+  resources:
+  - availabilityzones/status
+  verbs:
+  - get
+  - list
+  - watch
