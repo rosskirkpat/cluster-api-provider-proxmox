@@ -17,36 +17,136 @@ limitations under the License.
 package main
 
 import (
-	context2 "context"
+	goctx "context"
 	"flag"
 	"fmt"
-	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/context"
-	"k8s.io/apimachinery/pkg/api/meta"
+	"math/rand"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"reflect"
+	"time"
 
-	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
-	// to ensure that exec-entrypoint and run can make use of them.
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
+	"github.com/fsnotify/fsnotify"
+	infrastructurev1alpha1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
+	controller "github.com/rosskirkpat/cluster-api-provider-proxmox/controllers"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/constants"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/context"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/manager"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/session"
+	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	cliflag "k8s.io/component-base/cli/flag"
+	"k8s.io/component-base/logs"
+	logsv1 "k8s.io/component-base/logs/api/v1"
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/cluster-api/util/flags"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	infrastructurev1alpha1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
-	controller "github.com/rosskirkpat/cluster-api-provider-proxmox/controllers"
 	//+kubebuilder:scaffold:imports
 )
 
 var (
+	logOptions       = logs.NewOptions()
 	scheme           = runtime.NewScheme()
 	setupLog         = ctrl.Log.WithName("setup")
-	ManagerNamespace = "cluster-api-provider-proxmox-system"
-	ManagerName      = "cluster-api-provider-proxmox-manager"
+	ManagerNamespace = "cappx-system"
+	ManagerName      = "cappx-manager"
+
+	managerOpts     manager.Options
+	syncPeriod      time.Duration
+	profilerAddress string
+
+	tlsOptions = flags.TLSOptions{}
+
+	defaultProfilerAddr      = os.Getenv("PROFILER_ADDR")
+	defaultSyncPeriod        = manager.DefaultSyncPeriod
+	defaultLeaderElectionID  = manager.DefaultLeaderElectionID
+	defaultPodName           = manager.DefaultPodName
+	defaultWebhookPort       = manager.DefaultWebhookServiceContainerPort
+	defaultEnableKeepAlive   = constants.DefaultEnableKeepAlive
+	defaultKeepAliveDuration = constants.DefaultKeepAliveDuration
 )
+
+// InitFlags initializes the flags.
+func InitFlags(fs *pflag.FlagSet) {
+	logsv1.AddFlags(logOptions, fs)
+
+	flag.StringVar(
+		&managerOpts.MetricsBindAddress,
+		"metrics-bind-addr",
+		"localhost:8080",
+		"The address the metric endpoint binds to.")
+	flag.BoolVar(
+		&managerOpts.LeaderElection,
+		"leader-elect",
+		true,
+		"Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(
+		&managerOpts.LeaderElectionID,
+		"leader-election-id",
+		defaultLeaderElectionID,
+		"Name of the config map to use as the locking resource when configuring leader election.")
+	flag.StringVar(
+		&managerOpts.Namespace,
+		"namespace",
+		"",
+		"Namespace that the controller watches to reconcile cluster-api objects. If unspecified, the controller watches for cluster-api objects across all namespaces.")
+	flag.StringVar(
+		&profilerAddress,
+		"profiler-address",
+		defaultProfilerAddr,
+		"Bind address to expose the pprof profiler (e.g. localhost:6060)")
+	flag.DurationVar(
+		&syncPeriod,
+		"sync-period",
+		defaultSyncPeriod,
+		"The interval at which cluster-api objects are synchronized")
+	flag.IntVar(
+		&managerOpts.MaxConcurrentReconciles,
+		"max-concurrent-reconciles",
+		10,
+		"The maximum number of allowed, concurrent reconciles.")
+	flag.StringVar(
+		&managerOpts.PodName,
+		"pod-name",
+		defaultPodName,
+		"The name of the pod running the controller manager.")
+	flag.IntVar(
+		&managerOpts.Port,
+		"webhook-port",
+		defaultWebhookPort,
+		"Webhook Server port (set to 0 to disable)")
+	flag.StringVar(
+		&managerOpts.HealthProbeBindAddress,
+		"health-addr",
+		":9440",
+		"The address the health endpoint binds to.",
+	)
+	flag.StringVar(
+		&managerOpts.CredentialsFile,
+		"credentials-file",
+		"/etc/cappx/credentials.yaml",
+		"path to CAPPX's credentials file",
+	)
+	flag.BoolVar(
+		&managerOpts.EnableKeepAlive,
+		"enable-keep-alive",
+		defaultEnableKeepAlive,
+		"feature to enable keep alive handler in proxmox sessions. This functionality is enabled by default.")
+	flag.DurationVar(
+		&managerOpts.KeepAliveDuration,
+		"keep-alive-duration",
+		defaultKeepAliveDuration,
+		"idle time interval(minutes) in between send() requests in keepalive handler",
+	)
+	flags.AddTLSOptions(fs, &tlsOptions)
+
+}
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -56,34 +156,80 @@ func init() {
 }
 
 func main() {
-	var configFile string
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
-	opts := zap.Options{
-		Development: true,
+
+	rand.Seed(time.Now().UnixNano())
+
+	InitFlags(pflag.CommandLine)
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+	pflag.CommandLine.SetNormalizeFunc(cliflag.WordSepNormalizeFunc)
+	if err := pflag.CommandLine.Set("v", "2"); err != nil {
+		setupLog.Error(err, "failed to set log level: %v")
+		os.Exit(1)
 	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
+	pflag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	var err error
-	options := ctrl.Options{Scheme: scheme}
-	if configFile != "" {
-		options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
-		if err != nil {
-			setupLog.Error(err, "unable to load the config file")
-			os.Exit(1)
-		}
-	}
-
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
-	if err != nil {
+	if err := logsv1.ValidateAndApply(logOptions, nil); err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	// klog.Background will automatically use the right logger.
+	ctrl.SetLogger(klog.Background())
+
+	if managerOpts.Namespace != "" {
+		setupLog.Info(
+			"Watching objects only in namespace for reconciliation",
+			"namespace", managerOpts.Namespace)
+	}
+
+	if profilerAddress != "" {
+		setupLog.Info(
+			"Profiler listening for requests",
+			"profiler-address", profilerAddress)
+		go runProfiler(profilerAddress)
+	}
+	//
+	//var configFile string
+	//flag.StringVar(&configFile, "config", "",
+	//	"The controller will load its initial configuration from this file. "+
+	//		"Omit this flag to use the default configuration values. "+
+	//		"Command-line flags override configuration from this file.")
+	//
+	//opts := zap.Options{
+	//	Development: true,
+	//}
+	//opts.BindFlags(flag.CommandLine)
+	//flag.Parse()
+	//
+	//ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	//var err error
+	//options := ctrl.Options{Scheme: scheme}
+	//if configFile != "" {
+	//	options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
+	//	if err != nil {
+	//		setupLog.Error(err, "unable to load the config file")
+	//		os.Exit(1)
+	//	}
+	//}
+
+	tlsOptionOverrides, err := flags.GetTLSOptionOverrideFuncs(tlsOptions)
+	if err != nil {
+		setupLog.Error(err, "unable to add TLS settings to the webhook server")
+		os.Exit(1)
+	}
+	managerOpts.TLSOpts = tlsOptionOverrides
+
+	mgr, err := manager.New(managerOpts)
+	if err != nil {
+		return
+	}
+	//
+	//mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
+	//if err != nil {
+	//	setupLog.Error(err, "unable to start manager")
+	//	os.Exit(1)
+	//}
 
 	if err = (&controller.ProxmoxClusterReconciler{
 		Client: mgr.GetClient(),
@@ -101,7 +247,7 @@ func main() {
 	}
 
 	ctx := &context.ControllerContext{
-		Context:   context2.Background(),
+		Context:   goctx.Background(),
 		Namespace: ManagerNamespace,
 		Name:      ManagerName,
 		Logger:    ctrl.Log,
@@ -190,5 +336,34 @@ func main() {
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+
+	// initialize notifier for cappx-manager-bootstrap-credentials
+	watch, err := manager.InitializeWatch(mgr.GetContext(), &managerOpts)
+	if err != nil {
+		setupLog.Error(err, "failed to initialize watch on CAPPX credentials file")
+		os.Exit(1)
+	}
+	defer func(watch *fsnotify.Watcher) {
+		_ = watch.Close()
+	}(watch)
+	defer session.Clear()
+}
+
+func runProfiler(addr string) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	srv := http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 2 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		setupLog.Error(err, "problem running profiler server")
 	}
 }
