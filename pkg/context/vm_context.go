@@ -2,11 +2,11 @@ package context
 
 import (
 	"fmt"
-
 	"github.com/go-logr/logr"
 	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/session"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // VMContext is a Go context used with a ProxmoxVM.
@@ -37,4 +37,8 @@ func (c *VMContext) GetLogger() logr.Logger {
 // GetSession returns this context's session.
 func (c *VMContext) GetSession() *session.Session {
 	return c.Session
+}
+
+func (c *VMContext) GetClient() client.Client {
+	return c.ControllerContext.Client
 }

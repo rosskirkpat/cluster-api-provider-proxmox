@@ -3,8 +3,6 @@ package manager
 import (
 	goctx "context"
 	"fmt"
-	"os"
-
 	"github.com/fsnotify/fsnotify"
 	"github.com/pkg/errors"
 	"github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
@@ -39,10 +37,10 @@ func New(opts Options) (Manager, error) {
 	_ = ipamv1.AddToScheme(opts.Scheme)
 	// +kubebuilder:scaffold:scheme
 
-	podName, err := os.Hostname()
-	if err != nil {
-		podName = DefaultPodName
-	}
+	//podName, err := os.Hostname()
+	//if err != nil {
+	podName := DefaultPodName
+	//}
 
 	// Build the controller manager.
 	mgr, err := ctrl.NewManager(opts.KubeConfig, opts.Options)

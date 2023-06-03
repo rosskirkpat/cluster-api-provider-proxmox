@@ -2,7 +2,6 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  creationTimestamp: null
   name: mutating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
@@ -74,7 +73,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-proxmoxvm
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxvm
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.proxmoxvm.infrastructure.x-k8s.io
@@ -93,7 +92,6 @@ webhooks:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-  creationTimestamp: null
   name: validating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
@@ -207,7 +205,7 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-proxmoxvm
+      path: /validate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxvm
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.proxmoxvm.infrastructure.x-k8s.io

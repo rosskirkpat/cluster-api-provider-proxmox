@@ -2,6 +2,7 @@ package context
 
 import (
 	"fmt"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
 	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
@@ -13,6 +14,7 @@ import (
 // ClusterContext is a Go context used with a ProxmoxCluster.
 type ClusterContext struct {
 	*ControllerContext
+	Client         client.Client
 	Cluster        *clusterv1.Cluster
 	ProxmoxCluster *infrav1.ProxmoxCluster
 	PatchHelper    *patch.Helper

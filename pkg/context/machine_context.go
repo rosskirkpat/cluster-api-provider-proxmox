@@ -2,6 +2,7 @@ package context
 
 import (
 	"fmt"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
 	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
@@ -16,6 +17,7 @@ type BaseMachineContext struct {
 	Cluster     *clusterv1.Cluster
 	Machine     *clusterv1.Machine
 	PatchHelper *patch.Helper
+	Client      client.Client
 }
 
 func (c *BaseMachineContext) GetCluster() *clusterv1.Cluster {
@@ -34,6 +36,7 @@ func (c *BaseMachineContext) GetLogger() logr.Logger {
 // PIMMachineContext is a Go context used with a ProxmoxMachine.
 type PIMMachineContext struct {
 	*BaseMachineContext
+	Client         client.Client
 	ProxmoxCluster *infrav1.ProxmoxCluster
 	ProxmoxMachine *infrav1.ProxmoxMachine
 }
@@ -58,4 +61,8 @@ func (c *PIMMachineContext) GetObjectMeta() v1.ObjectMeta {
 
 func (c *PIMMachineContext) SetBaseMachineContext(base *BaseMachineContext) {
 	c.BaseMachineContext = base
+}
+
+func (c *PIMMachineContext) GetClient() client.Client {
+	return c.ControllerContext.Client
 }

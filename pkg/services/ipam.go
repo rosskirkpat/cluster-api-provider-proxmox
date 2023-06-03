@@ -117,8 +117,7 @@ type ipamDeviceConfig struct {
 	IPAMConfigGateway6  string
 }
 
-func BuildState(ctx context.VMContext, networkStatus []infrav1.NetworkStatus) (map[string]infrav1.NetworkDeviceSpec, error) {
-	state := map[string]infrav1.NetworkDeviceSpec{}
+func BuildState(ctx context.VMContext, networkStatus []infrav1.NetworkStatus, state map[string]infrav1.NetworkDeviceSpec) (map[string]infrav1.NetworkDeviceSpec, error) {
 
 	ipamDeviceConfigs, err := buildIPAMDeviceConfigs(ctx, networkStatus)
 	if err != nil {

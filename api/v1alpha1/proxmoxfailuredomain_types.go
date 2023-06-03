@@ -64,10 +64,10 @@ type Topology struct {
 }
 
 type FailureDomainHosts struct {
-	// ClusterVMGroupName is the name of the Cluster VM group
+	// ClusterVMGroupName is the name of the Cluster VM group (a Proxmox node)
 	ClusterVMGroupName string `json:"clusterCMGroupName"`
 
-	// HAGroupName is the name of the HA group
+	// HAGroupName is the name of the HA group (HA-configured Proxmox Cluster)
 	HAGroupName string `json:"haGroupName"`
 
 	// Pool is the name of the Proxmox Cluster pool

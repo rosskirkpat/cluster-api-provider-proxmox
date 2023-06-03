@@ -156,7 +156,7 @@ func (r *ProxmoxMachineReconciler) Reconcile(_ goctx.Context, req ctrl.Request) 
 	}
 
 	// Fetch the CAPI Machine and CAPI Cluster.
-	machine, err := clusterutilv1.GetOwnerMachine(r, r.Client, machineContext.GetObjectMeta())
+	machine, err := clusterutilv1.GetOwnerMachine(r.ControllerContext, r.Client, machineContext.GetObjectMeta())
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -182,6 +182,7 @@ func (r *ProxmoxMachineReconciler) Reconcile(_ goctx.Context, req ctrl.Request) 
 		Machine:           machine,
 		Logger:            logger,
 		PatchHelper:       patchHelper,
+		Client:            r.Client,
 	})
 	// always patch the ProxmoxMachine object
 	defer func() {

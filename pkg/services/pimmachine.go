@@ -29,7 +29,10 @@ func (v *PimMachineService) FetchProxmoxMachine(c client.Client, name types.Name
 	proxmoxMachine := &infrav1.ProxmoxMachine{}
 	err := c.Get(goctx.Background(), name, proxmoxMachine)
 
-	return &context.PIMMachineContext{ProxmoxMachine: proxmoxMachine}, err
+	return &context.PIMMachineContext{
+		ProxmoxMachine: proxmoxMachine,
+		Client:         c,
+	}, err
 }
 
 func (v *PimMachineService) FetchProxmoxCluster(c client.Client, cluster *clusterv1.Cluster, machineContext context.MachineContext) (context.MachineContext, error) {
@@ -75,6 +78,7 @@ func (v *PimMachineService) ReconcileDelete(c context.MachineContext) error {
 }
 
 func (v *PimMachineService) SyncFailureReason(c context.MachineContext) (bool, error) {
+
 	ctx, ok := c.(*context.PIMMachineContext)
 	if !ok {
 		return false, errors.New("received unexpected PIMMachineContext type")
@@ -98,6 +102,7 @@ func (v *PimMachineService) ReconcileNormal(c context.MachineContext) (bool, err
 	if !ok {
 		return false, errors.New("received unexpected PIMMachineContext type")
 	}
+
 	proxmoxVM, err := v.findVM(ctx)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return false, err
@@ -220,34 +225,34 @@ func (v *PimMachineService) waitReadyState(ctx *context.PIMMachineContext, vm *u
 }
 
 func (v *PimMachineService) reconcileProviderID(ctx *context.PIMMachineContext, vm *unstructured.Unstructured) (bool, error) {
-	biosUUID, ok, err := unstructured.NestedString(vm.Object, "spec", "biosUUID")
+	vmId, ok, err := unstructured.NestedString(vm.Object, "spec", "vmId")
 	if !ok {
 		if err != nil {
 			return false, errors.Wrapf(err,
-				"unexpected error when getting spec.biosUUID from %s %s/%s for %s",
+				"unexpected error when getting spec.vmId from %s %s/%s for %s",
 				vm.GroupVersionKind(),
 				vm.GetNamespace(),
 				vm.GetName(),
 				ctx)
 		}
-		ctx.Logger.Info("spec.biosUUID not found",
+		ctx.Logger.Info("spec.vmId not found",
 			"vmGVK", vm.GroupVersionKind().String(),
 			"vmNamespace", vm.GetNamespace(),
 			"vmName", vm.GetName())
 		return false, nil
 	}
-	if biosUUID == "" {
-		ctx.Logger.Info("spec.biosUUID is empty",
+	if vmId == "" {
+		ctx.Logger.Info("spec.vmId is empty",
 			"vmGVK", vm.GroupVersionKind().String(),
 			"vmNamespace", vm.GetNamespace(),
 			"vmName", vm.GetName())
 		return false, nil
 	}
 
-	providerID := infrautilv1.ConvertUUIDToProviderID(biosUUID)
+	providerID := infrautilv1.ConvertUUIDToProviderID(vmId)
 	if providerID == "" {
 		return false, errors.Errorf("invalid BIOS UUID %s from %s %s/%s for %s",
-			biosUUID,
+			vmId,
 			vm.GroupVersionKind(),
 			vm.GetNamespace(),
 			vm.GetName(),
@@ -332,6 +337,7 @@ func (v *PimMachineService) createOrPatchProxmoxVM(ctx *context.PIMMachineContex
 
 		// Instruct the ProxmoxVM to use the CAPI bootstrap data resource.
 		// TODO: BootstrapRef field should be replaced with BootstrapSecret of type string
+		//vm.Spec.BootstrapRef = clusterv1.Bootstrap{}.DataSecretName
 		vm.Spec.BootstrapRef = &corev1.ObjectReference{
 			APIVersion: "v1",
 			Kind:       "Secret",

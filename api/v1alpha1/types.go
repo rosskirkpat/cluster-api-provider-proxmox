@@ -49,8 +49,8 @@ const (
 
 // VirtualMachineCloneSpec is information used to clone a virtual machine.
 type VirtualMachineCloneSpec struct {
-	// Template is the name or inventory path of the template used to clone
-	// the virtual machine.
+	// Template is the unique VM ID that the new virtual machine
+	// will be cloned from
 	// +kubebuilder:validation:MinLength=1
 	Template string `json:"template"`
 
@@ -77,8 +77,8 @@ type VirtualMachineCloneSpec struct {
 	// +optional
 	Snapshot string `json:"snapshot,omitempty"`
 
-	// CloneId is the unique VM ID that will be cloned
-	CloneId string `json:"cloneId,omitempty"`
+	// TemplateNodeRef is the Proxmox node that the template exists on
+	TemplateNodeRef string `json:"templateNodeRef,omitempty"`
 
 	// Server is the IP address or FQDN of the Proxmox server on which
 	// the virtual machine is created/located.
@@ -453,7 +453,7 @@ type VirtualMachine struct {
 	Name string `json:"name"`
 
 	// VMID is the VM's ID.
-	VMID string `json:"biosUUID"`
+	VMID int `json:"vmId"`
 
 	// State is the VM's state.
 	State VirtualMachineState `json:"state"`

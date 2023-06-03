@@ -18,8 +18,8 @@ func (r *ProxmoxVM) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-proxmoxvm,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=proxmoxvms,versions=v1alpha1,name=validation.proxmoxvm.infrastructure.x-k8s.io,sideEffects=None,admissionReviewVersions=v1alpha1
-// +kubebuilder:webhook:verbs=create;update,path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-proxmoxvm,mutating=true,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=proxmoxvms,versions=v1alpha1,name=default.proxmoxvm.infrastructure.x-k8s.io,sideEffects=None,admissionReviewVersions=v1alpha1
+// +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxvm,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=proxmoxvms,versions=v1alpha1,name=validation.proxmoxvm.infrastructure.x-k8s.io,sideEffects=None,admissionReviewVersions=v1alpha1
+// +kubebuilder:webhook:verbs=create;update,path=/mutate-infrastructure-cluster-x-k8s-io-v1alpha1-proxmoxvm,mutating=true,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=proxmoxvms,versions=v1alpha1,name=default.proxmoxvm.infrastructure.x-k8s.io,sideEffects=None,admissionReviewVersions=v1alpha1
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type.
 func (r *ProxmoxVM) Default() {

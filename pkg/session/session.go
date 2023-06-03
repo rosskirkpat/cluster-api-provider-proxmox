@@ -2,7 +2,12 @@ package session
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
+	"net/http"
 	"net/url"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +34,9 @@ var (
 // Session is a Proxmox session with a configured Cluster.
 type Session struct {
 	*proxmox.Client
+	ProxmoxCluster *proxmox.Cluster
+	VMs            map[string]*proxmox.VirtualMachine
+	Nodes          map[string]*proxmox.Node
 }
 
 type Feature struct {
@@ -96,7 +104,7 @@ func GetOrCreate(ctx context.Context, params *Params) (*Session, error) {
 	sessionMU.Lock()
 	defer sessionMU.Unlock()
 
-	sessionKey := params.server + params.userinfo.Username() + params.datacenter
+	sessionKey := path.Join(params.server, params.userinfo.Username(), params.datacenter)
 	// TODO implement proxmox client session caching
 	//if cachedSession, ok := sessionCache.Load(sessionKey); ok {
 	//	s := cachedSession.(*Session)
@@ -105,18 +113,25 @@ func GetOrCreate(ctx context.Context, params *Params) (*Session, error) {
 
 	clearCache(logger, sessionKey)
 
-	proxmoxUrl, err := url.Parse(params.server)
-	if err != nil {
-		return nil, errors.Errorf("error parsing Proxmox server URL from %q", params.server)
+	serverPath := params.server
+	if !strings.Contains(serverPath, "https") {
+		newPath, err := url.JoinPath("https://", serverPath)
+		if err != nil {
+			return nil, err
+		}
+		serverPath = newPath
 	}
-	client, err := newClient(ctx, logger, sessionKey, proxmoxUrl, params.thumbprint, params.feature)
+	proxmoxUrl, err := url.Parse(serverPath)
+	if err != nil {
+		return nil, errors.Errorf("error parsing Proxmox server URL from %q", serverPath)
+	}
+	client, err := newClient(ctx, logger, sessionKey, proxmoxUrl, params)
 	if err != nil {
 		return nil, err
 	}
 
 	session := Session{Client: client}
 	// TODO add user agent field to go-proxmox client
-	//session.UserAgent = infrav1.GroupVersion.String()
 
 	// Cache the session.
 	sessionCache.Store(sessionKey, &session)
@@ -126,29 +141,56 @@ func GetOrCreate(ctx context.Context, params *Params) (*Session, error) {
 	return &session, nil
 }
 
-func newClient(ctx context.Context, logger logr.Logger, sessionKey string, url *url.URL, thumbprint string, feature Feature) (*proxmox.Client, error) {
-	client := proxmox.NewClient(url.Host)
-	//proxmox.WithUserAgent(ProviderUserAgent)
+func newClient(ctx context.Context, logger logr.Logger, sessionKey string, url *url.URL, params *Params) (*proxmox.Client, error) {
+	pw, ok := params.userinfo.Password()
+	if !ok {
+		return nil, errors.Errorf("empty password supplied for proxmox user %s", params.userinfo.Username())
+	}
+	hclient := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+		Timeout: 10 * time.Second,
+	}
 
+	client := proxmox.NewClient(fmt.Sprintf("%s://%s%s", url.Scheme, url.Host, url.Path),
+		proxmox.WithUserAgent(ProviderUserAgent),
+		proxmox.WithClient(&hclient),
+		proxmox.WithLogins(params.userinfo.Username(), pw),
+	)
 	if client == nil {
 		return nil, errors.Errorf("error creating Proxmox client for %q", url.Host)
 	}
+	creds := proxmox.Credentials{}
+	creds.Username = params.userinfo.Username()
+	creds.Password = pw
+	creds.Realm = "pam"
+	session, err := client.Ticket(&creds)
+	if err != nil {
+		return nil, err
+	}
+
+	return proxmox.NewClient(fmt.Sprintf("%s://%s%s", url.Scheme, url.Host, url.Path),
+		proxmox.WithUserAgent(ProviderUserAgent),
+		proxmox.WithClient(&hclient),
+		proxmox.WithLogins(params.userinfo.Username(), pw),
+		proxmox.WithSession(session.Ticket, session.CsrfPreventionToken),
+	), nil
 	// TODO implement custom CA support for go-proxmox client
 	//insecure := thumbprint == ""
 	//if !insecure {
 	//	client.SetThumbprint(url.Host, thumbprint)
 	//}
 
-	pw, ok := url.User.Password()
-	if !ok {
-		return nil, errors.Errorf("empty password supplied for proxmox user %s", url.User.Username())
-	}
+	//pw, ok := url.User.Password()
 
-	if err := client.Login(url.User.Username(), pw); err != nil {
-		return nil, err
-	}
+	//if err := client.Login(params.userinfo.Username(), session.Ticket); err != nil {
+	//	return nil, err
+	//}
 
-	return client, nil
+	//return client, nil
 }
 
 func clearCache(logger logr.Logger, sessionKey string) {
@@ -165,14 +207,20 @@ func clearCache(logger logr.Logger, sessionKey string) {
 
 func (s *Session) GetVersion() (infrav1.ProxmoxVersion, error) {
 	svcVersion, err := s.Version()
-	version, err := semver.New(svcVersion.Version)
+	if err != nil {
+		return "", err
+	}
+	if svcVersion == nil {
+		return infrav1.NewProxmoxVersion("7"), nil
+	}
+	version, err := semver.New(strings.Replace(svcVersion.Version, "-", ".", 1))
 	if err != nil {
 		return "", err
 	}
 
 	switch version.Major {
 	case 6, 7, 8:
-		return infrav1.NewProxmoxVersion(svcVersion.Version), nil
+		return infrav1.NewProxmoxVersion(version.String()), nil
 	default:
 		return "", unidentifiedProxmoxVersion{version: svcVersion.Version}
 	}

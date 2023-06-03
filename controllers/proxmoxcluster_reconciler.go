@@ -40,10 +40,10 @@ type ProxmoxClusterReconciler struct {
 }
 
 // Reconcile ensures the back-end state reflects the Kubernetes resource state intent.
-func (r *ProxmoxClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *ProxmoxClusterReconciler) Reconcile(ctx goctx.Context, req ctrl.Request) (ctrl.Result, error) {
 	// Get the ProxmoxCluster resource for this request.
 	proxmoxCluster := &infrav1.ProxmoxCluster{}
-	if err := r.Client.Get(r, req.NamespacedName, proxmoxCluster); err != nil {
+	if err := r.Client.Get(r.Context, req.NamespacedName, proxmoxCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.Logger.V(4).Info("ProxmoxCluster not found, unable to reconcile", "key", req.NamespacedName)
 			return reconcile.Result{}, nil
@@ -52,7 +52,7 @@ func (r *ProxmoxClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) 
 	}
 
 	// Fetch the CAPI Cluster.
-	cluster, err := clusterutilv1.GetOwnerCluster(r, r.Client, proxmoxCluster.ObjectMeta)
+	cluster, err := clusterutilv1.GetOwnerCluster(r.Context, r.Client, proxmoxCluster.ObjectMeta)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -84,15 +84,13 @@ func (r *ProxmoxClusterReconciler) Reconcile(_ goctx.Context, req ctrl.Request) 
 		ProxmoxCluster:    proxmoxCluster,
 		Logger:            r.Logger.WithName(req.Namespace).WithName(req.Name),
 		PatchHelper:       patchHelper,
+		Client:            r.Client,
 	}
 
 	// Always issue a patch when exiting this function so changes to the
 	// resource are patched back to the API server.
 	defer func() {
 		if err := clusterContext.Patch(); err != nil {
-			if reterr == nil {
-				reterr = err
-			}
 			clusterContext.Logger.Error(err, "patch failed", "cluster", clusterContext.String())
 		}
 	}()
@@ -209,11 +207,14 @@ func (r *ProxmoxClusterReconciler) reconcileNormal(ctx *context.ClusterContext) 
 	}
 	conditions.MarkTrue(ctx.ProxmoxCluster, infrav1.ProxmoxAvailableCondition)
 
-	err = r.reconcileProxmoxVersion(ctx, proxmoxSession)
-	if err != nil || ctx.ProxmoxCluster.Status.ProxmoxVersion == "" {
-		conditions.MarkFalse(ctx.ProxmoxCluster, infrav1.ClusterFeaturesAvailableCondition, infrav1.MissingProxmoxVersionReason, clusterv1.ConditionSeverityWarning, "Proxmox API version not set")
-		ctx.Logger.Error(err, "could not reconcile Proxmox version")
+	if ctx.ProxmoxCluster.Status.ProxmoxVersion == "" {
+		err = r.reconcileProxmoxVersion(ctx, proxmoxSession)
+		if err != nil || ctx.ProxmoxCluster.Status.ProxmoxVersion == "" {
+			conditions.MarkFalse(ctx.ProxmoxCluster, infrav1.ClusterFeaturesAvailableCondition, infrav1.MissingProxmoxVersionReason, clusterv1.ConditionSeverityWarning, "Proxmox API version not set")
+			ctx.Logger.Error(err, "could not reconcile Proxmox version")
+		}
 	}
+	conditions.MarkTrue(ctx.ProxmoxCluster, infrav1.ClusterFeaturesAvailableCondition)
 
 	ctx.ProxmoxCluster.Status.Ready = true
 

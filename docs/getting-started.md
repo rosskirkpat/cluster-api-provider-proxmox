@@ -86,7 +86,7 @@ PROXMOX_DATASTORE: "local-zfs"                         # The Proxmox storage to 
 PROXMOX_NETWORK: "vmbr0"                                 # The VM network to deploy the management cluster on
 PROXMOX_RESOURCE_POOL: "infra"                          # The Proxmox pool for your VMs
 PROXMOX_FOLDER: ""                                          # The VM folder for your VMs. Set to "" to use the root Proxmox folder
-PROXMOX_TEMPLATE: "9090"                  # The VM template ID to use for your management cluster.
+PROXMOX_TEMPLATE: "9020"                  # The VM template ID to use for your management cluster.
 CONTROL_PLANE_ENDPOINT_IP: "10.50.150.250"                    # the IP that kube-vip is going to use as a control plane endpoint
 VIP_NETWORK_INTERFACE: ""                               # The interface that kube-vip should apply the IP to. Omit to tell kube-vip to autodetect the interface.
 PROXMOX_TLS_THUMBPRINT: ""                                 # sha1 thumbprint of the proxmox certificate: openssl x509 -sha1 -fingerprint -in ca.crt -noout

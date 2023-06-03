@@ -200,7 +200,7 @@ func getProxmoxMachineByName(ctx context.Context, c client.Client, namespace, na
 const (
 	// ProviderIDPrefix is the string data prefixed to a BIOS UUID in order
 	// to build a provider ID.
-	ProviderIDPrefix = "proxmox://"
+	ProviderIDPrefix = "cappx://"
 
 	// ProviderIDPattern is a regex pattern and is used by ConvertProviderIDToUUID
 	// to convert a providerID into a UUID string.
@@ -234,10 +234,10 @@ func ConvertUUIDToProviderID(uuid string) string {
 	if uuid == "" {
 		return ""
 	}
-	pattern := regexp.MustCompile(UUIDPattern)
-	if !pattern.MatchString(uuid) {
-		return ""
-	}
+	//pattern := regexp.MustCompile(UUIDPattern)
+	//if !pattern.MatchString(uuid) {
+	//	return ""
+	//}
 	return ProviderIDPrefix + uuid
 }
 

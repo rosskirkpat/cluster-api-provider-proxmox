@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.11.3
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.12.0
   name: proxmoxvms.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -45,11 +44,6 @@ spec:
                   format: int32
                   type: integer
                 type: array
-              biosUUID:
-                description: VMID is the VM's unique ID that is assigned at runtime
-                  after the VM has been created. This field is required at runtime
-                  for other controllers that read this CRD as unstructured data.
-                type: string
               bootstrapRef:
                 description: BootstrapRef is a reference to a bootstrap provider-specific
                   resource that holds configuration details. This field is optional
@@ -466,6 +460,11 @@ spec:
                   this VirtualMachine would be created without TLS certificate validation
                   of the communication between Cluster API Provider Proxmox and the
                   Proxmox server.
+                type: string
+              vmId:
+                description: VMID is the VM's unique ID that is assigned at runtime
+                  after the VM has been created. This field is required at runtime
+                  for other controllers that read this CRD as unstructured data.
                 type: string
             required:
             - network

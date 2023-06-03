@@ -18,13 +18,22 @@ package main
 
 import (
 	goctx "context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/certs"
+	"github.com/rosskirkpat/cluster-api-provider-proxmox/pkg/services"
 	"math/rand"
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"path"
 	"reflect"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
+	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
+	ipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -43,14 +52,14 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	logsv1 "k8s.io/component-base/logs/api/v1"
-	"k8s.io/klog/v2"
-	"sigs.k8s.io/cluster-api/util/flags"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	//+kubebuilder:scaffold:imports
 )
 
 var (
+	configFile string
+
 	logOptions       = logs.NewOptions()
 	scheme           = runtime.NewScheme()
 	setupLog         = ctrl.Log.WithName("setup")
@@ -61,7 +70,7 @@ var (
 	syncPeriod      time.Duration
 	profilerAddress string
 
-	tlsOptions = flags.TLSOptions{}
+	//tlsOptions = flags.TLSOptions{}
 
 	defaultProfilerAddr      = os.Getenv("PROFILER_ADDR")
 	defaultSyncPeriod        = manager.DefaultSyncPeriod
@@ -75,7 +84,11 @@ var (
 // InitFlags initializes the flags.
 func InitFlags(fs *pflag.FlagSet) {
 	logsv1.AddFlags(logOptions, fs)
-
+	flag.StringVar(
+		&configFile,
+		"config",
+		"controller_manager_config.yaml",
+		"The controller manager config file")
 	flag.StringVar(
 		&managerOpts.MetricsBindAddress,
 		"metrics-bind-addr",
@@ -94,7 +107,7 @@ func InitFlags(fs *pflag.FlagSet) {
 	flag.StringVar(
 		&managerOpts.Namespace,
 		"namespace",
-		"",
+		ManagerNamespace,
 		"Namespace that the controller watches to reconcile cluster-api objects. If unspecified, the controller watches for cluster-api objects across all namespaces.")
 	flag.StringVar(
 		&profilerAddress,
@@ -144,14 +157,17 @@ func InitFlags(fs *pflag.FlagSet) {
 		defaultKeepAliveDuration,
 		"idle time interval(minutes) in between send() requests in keepalive handler",
 	)
-	flags.AddTLSOptions(fs, &tlsOptions)
+	//flags.AddTLSOptions(fs, &tlsOptions)
 
 }
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(infrastructurev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(controlplanev1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(bootstrapv1.AddToScheme(scheme))
+	utilruntime.Must(ipamv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -174,7 +190,8 @@ func main() {
 	}
 
 	// klog.Background will automatically use the right logger.
-	ctrl.SetLogger(klog.Background())
+	//ctrl.SetLogger(klog.Background())
+	//managerOpts.LeaderElectionNamespace = ManagerNamespace
 
 	if managerOpts.Namespace != "" {
 		setupLog.Info(
@@ -189,69 +206,124 @@ func main() {
 		go runProfiler(profilerAddress)
 	}
 	//
-	//var configFile string
 	//flag.StringVar(&configFile, "config", "",
 	//	"The controller will load its initial configuration from this file. "+
 	//		"Omit this flag to use the default configuration values. "+
 	//		"Command-line flags override configuration from this file.")
 	//
-	//opts := zap.Options{
-	//	Development: true,
-	//}
+	opts := zap.Options{
+		Development: true,
+	}
 	//opts.BindFlags(flag.CommandLine)
 	//flag.Parse()
 	//
-	//ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	//var err error
-	//options := ctrl.Options{Scheme: scheme}
-	//if configFile != "" {
-	//	options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
-	//	if err != nil {
-	//		setupLog.Error(err, "unable to load the config file")
-	//		os.Exit(1)
-	//	}
-	//}
-
-	tlsOptionOverrides, err := flags.GetTLSOptionOverrideFuncs(tlsOptions)
-	if err != nil {
-		setupLog.Error(err, "unable to add TLS settings to the webhook server")
-		os.Exit(1)
+	var err error
+	options := ctrl.Options{Scheme: scheme}
+	if configFile != "" {
+		options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
+		if err != nil {
+			setupLog.Error(err, "unable to load the config file")
+			os.Exit(1)
+		}
 	}
-	managerOpts.TLSOpts = tlsOptionOverrides
+	//
+	//tlsOptionOverrides, err := flags.GetTLSOptionOverrideFuncs(tlsOptions)
+	//if err != nil {
+	//	setupLog.Error(err, "unable to add TLS settings to the webhook server")
+	//	os.Exit(1)
+	//}
+	//managerOpts.TLSOpts = tlsOptionOverrides
 
-	mgr, err := manager.New(managerOpts)
+	//mgr, err := manager.New(managerOpts)
+	//if err != nil {
+	//	setupLog.Error(err, "unable to create new manager")
+	//	os.Exit(1)
+	//
+	//}
+	//
+
+	certPem, keyPem, _ := certs.NewSelfSignedCert()
+	cert, _ := tls.X509KeyPair(certPem, keyPem)
+
+	var tlsOptions []func(config *tls.Config)
+	tlsOptions = append(tlsOptions, func(cfg *tls.Config) {
+		cfg.Certificates = []tls.Certificate{cert}
+	})
+	options.TLSOpts = tlsOptions
+	thirty := 30 * time.Second
+	//ten := 10 * time.Second
+	options.LeaseDuration = &thirty
+	//options.RenewDeadline = &thirty
+	//options.RetryPeriod = &ten
+
+	temp, err := os.MkdirTemp("", "certs")
 	if err != nil {
 		return
 	}
-	//
-	//mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
-	//if err != nil {
-	//	setupLog.Error(err, "unable to start manager")
-	//	os.Exit(1)
-	//}
+	_ = os.WriteFile(path.Join(temp, "tls.key"), keyPem, 0444)
+	_ = os.WriteFile(path.Join(temp, "tls.crt"), certPem, 0444)
+	options.CertDir = temp
 
-	if err = (&controller.ProxmoxClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxCluster")
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
+	if err != nil {
+		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
-	if err = (&controller.ProxmoxMachineReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxMachine")
-		os.Exit(1)
-	}
+	//
+	//options.WebhookServer = mgr.GetWebhookServer()
+	//ws := mgr.GetWebhookServer()
+	//ws.TLSOpts = tlsOptions
 
 	ctx := &context.ControllerContext{
 		Context:   goctx.Background(),
 		Namespace: ManagerNamespace,
 		Name:      ManagerName,
-		Logger:    ctrl.Log,
+		Logger:    mgr.GetLogger(),
+		Scheme:    mgr.GetScheme(),
 	}
+
+	if err = (&controller.ProxmoxClusterReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ControllerContext: ctx,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxCluster")
+		os.Exit(1)
+	}
+	if err = (&controller.ProxmoxMachineReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ControllerContext: ctx,
+		VMService:         &services.PimMachineService{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxMachine")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ProxmoxVMReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ControllerContext: ctx,
+		VMService:         &services.VMService{},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxVM")
+		os.Exit(1)
+	}
+	//if err := controller.AddClusterControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxCluster{}); err != nil {
+	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxCluster")
+	//	os.Exit(1)
+	//}
+	//if err := controller.AddMachineControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxMachine{}); err != nil {
+	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxMachine")
+	//	os.Exit(1)
+	//}
+	//if err := controller.AddVMControllerToManager(ctx, mgr); err != nil {
+	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxVM")
+	//	os.Exit(1)
+	//}
+
 	cluster := &infrastructurev1alpha1.ProxmoxCluster{}
 	gvr := infrastructurev1alpha1.GroupVersion.WithResource(reflect.TypeOf(cluster).Elem().Name())
 	_, err = mgr.GetRESTMapper().KindFor(gvr)
@@ -300,18 +372,7 @@ func main() {
 		setupLog.Error(err, "unable to create webhook", "webhook", "ProxmoxMachineList")
 		os.Exit(1)
 	}
-	//if err := controller.AddClusterControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxCluster{}); err != nil {
-	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxCluster")
-	//	os.Exit(1)
-	//}
-	//if err := controller.AddMachineControllerToManager(ctx, mgr, &infrastructurev1alpha1.ProxmoxMachine{}); err != nil {
-	//	setupLog.Error(err, "unable to create controller", "controller", "ProxmoxMachine")
-	//	os.Exit(1)
-	//}
-	if err := controller.AddVMControllerToManager(ctx, mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxVM")
-		os.Exit(1)
-	}
+
 	if err := controller.AddProxmoxClusterIdentityControllerToManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ProxmoxClusterIdentity")
 		os.Exit(1)
@@ -339,7 +400,8 @@ func main() {
 	}
 
 	// initialize notifier for cappx-manager-bootstrap-credentials
-	watch, err := manager.InitializeWatch(mgr.GetContext(), &managerOpts)
+
+	watch, err := manager.InitializeWatch(ctx, &managerOpts)
 	if err != nil {
 		setupLog.Error(err, "failed to initialize watch on CAPPX credentials file")
 		os.Exit(1)

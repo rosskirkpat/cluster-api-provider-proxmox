@@ -2,6 +2,8 @@ module github.com/rosskirkpat/cluster-api-provider-proxmox
 
 go 1.19
 
+replace github.com/luthermonson/go-proxmox => github.com/rosskirkpat/go-proxmox v0.0.0-20230530165135-d080ed4efb10
+
 require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/fsnotify/fsnotify v1.6.0
@@ -17,7 +19,6 @@ require (
 	k8s.io/apimachinery v0.26.1
 	k8s.io/client-go v0.26.1
 	k8s.io/component-base v0.26.1
-	k8s.io/klog/v2 v2.80.1
 	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448
 	sigs.k8s.io/cluster-api v1.4.2
 	sigs.k8s.io/controller-runtime v0.14.5
@@ -90,6 +91,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.26.1 // indirect
 	k8s.io/cluster-bootstrap v0.25.0 // indirect
+	k8s.io/klog/v2 v2.80.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20221012153701-172d655c2280 // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect

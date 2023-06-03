@@ -16,6 +16,7 @@ type MachineContext interface {
 	GetObjectMeta() v1.ObjectMeta
 	GetCluster() *clusterv1.Cluster
 	GetMachine() *clusterv1.Machine
+	GetClient() client.Client
 	SetBaseMachineContext(base *BaseMachineContext)
 }
 

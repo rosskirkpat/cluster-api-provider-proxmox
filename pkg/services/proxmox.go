@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"k8s.io/utils/pointer"
 	gonet "net"
+	"reflect"
+	capierrors "sigs.k8s.io/cluster-api/errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/luthermonson/go-proxmox"
@@ -16,10 +20,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apitypes "k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
-	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
@@ -58,17 +60,63 @@ func (vms *VMService) ReconcileVM(ctx *context.VMContext) (vm infrav1.VirtualMac
 	// there is no task for the ProxmoxVM resource then no reconcile
 	// event is triggered.
 	defer reconcileProxmoxVMOnTaskCompletion(ctx)
+	if ctx.Session.ProxmoxCluster == nil {
+		cluster, err := ctx.Session.Cluster()
+		if err != nil {
+			return vm, err
+		}
+		ctx.Session.ProxmoxCluster = cluster
+	}
 
+	if ctx.Session.VMs == nil {
+		ctx.Session.VMs = make(map[string]*proxmox.VirtualMachine)
+	}
+	if ctx.Session.Nodes == nil {
+		ctx.Session.Nodes = make(map[string]*proxmox.Node)
+	}
+	for _, node := range ctx.Session.ProxmoxCluster.Nodes {
+		pnode, err := ctx.Session.Node(node.Name)
+		if err != nil {
+			return vm, err
+		}
+		ctx.Session.Nodes[node.Name] = pnode
+	}
 	// Before going further, we need the VM's proxmox reference.
 	vmRef, err := findVMResource(ctx)
 	//nolint:nestif
 	if err != nil {
+		// if error is anything besides not found, return the error
 		if !isNotFound(err) {
 			return vm, err
 		}
 
-		// If the machine was not found by VMID it means that it got deleted from proxmox directly
-		if wasNotFoundByVMID(err) {
+		// if VM is not found by VMID and vmRef , assume this is a new machine and VM needs to be created
+		if vmRef.ID == "" && vmRef.Status == "" && vmRef.Name == "" && isNotFound(err) {
+
+			// fetch the next unique VMID from Proxmox
+			nextId, err := ctx.Session.ProxmoxCluster.NextID()
+			if err != nil {
+				return vm, err
+			}
+
+			// assign the VMID returned from NextID() to the new ProxmoxVM
+			ctx.ProxmoxVM.Status.VmIdRef = nextId
+			vmRef.ID = strconv.Itoa(nextId)
+			vmRef.Name = vm.Name
+
+			// TODO add func to compute load for each node in a cluster and return the lowest utilized
+			// for now, hack it to only use the first node in the cluster
+			if vmRef.Node == "" {
+				vmRef.Node = ctx.Session.ProxmoxCluster.Nodes[0].Node
+			}
+			//ctx.ProxmoxFailureDomain.Spec.Topology.Hosts.ClusterVMGroupName
+
+			//	//ctx.ProxmoxVM.Spec = newVmResource.Node
+
+			ctx.ProxmoxVM.Status.Host = vmRef.Node
+			ctx.Logger.Info(fmt.Sprintf("new machine [%s] detected, creating proxmox vm with id: %d", vm.Name, ctx.ProxmoxVM.Status.VmIdRef))
+		} else {
+			// we assume this vm was deleted directly from proxmox
 			ctx.ProxmoxVM.Status.FailureReason = capierrors.MachineStatusErrorPtr(capierrors.UpdateMachineError)
 			ctx.ProxmoxVM.Status.FailureMessage = pointer.String(fmt.Sprintf("Unable to find VM by VMID %s. The vm was removed from infra", ctx.ProxmoxVM.Spec.VMID))
 			return vm, err
@@ -88,6 +136,31 @@ func (vms *VMService) ReconcileVM(ctx *context.VMContext) (vm infrav1.VirtualMac
 			return vm, err
 		}
 
+		// set the failure domain spec
+		if ctx.ProxmoxFailureDomain == nil {
+			ctx.ProxmoxFailureDomain = &infrav1.ProxmoxFailureDomain{
+				TypeMeta:   metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: infrav1.ProxmoxFailureDomainSpec{
+					Topology: infrav1.Topology{
+						Datacenter:     ctx.ProxmoxVM.Spec.Datacenter,
+						ComputeCluster: nil,
+						Hosts:          &infrav1.FailureDomainHosts{},
+						Networks:       nil,
+						Datastore:      ctx.ProxmoxVM.Spec.Datastore,
+					},
+				},
+			}
+		}
+		if ctx.ProxmoxFailureDomain.Spec.Topology.Hosts == nil {
+			ctx.ProxmoxFailureDomain.Spec.Topology.Hosts = &infrav1.FailureDomainHosts{}
+		}
+		if ctx.ProxmoxFailureDomain.Spec.Topology.ComputeCluster == nil {
+			ctx.ProxmoxFailureDomain.Spec.Topology.ComputeCluster = pointer.String(ctx.Session.ProxmoxCluster.Name)
+		}
+		ctx.ProxmoxFailureDomain.Spec.Topology.Hosts.ClusterVMGroupName = vmRef.Node
+		ctx.ProxmoxFailureDomain.Spec.Topology.Hosts.HAGroupName = ctx.Session.ProxmoxCluster.Name
+
 		// Create the VM.
 		err = createVM(ctx, vmRef, bootstrapData, format)
 		if err != nil {
@@ -102,7 +175,7 @@ func (vms *VMService) ReconcileVM(ctx *context.VMContext) (vm infrav1.VirtualMac
 	//
 
 	// fetch the new vm
-	newVM, err := fetchVMByClusterResource(ctx, vmRef.ID)
+	newVM, err := fetchVMByClusterResource(ctx, trimClusterResourceObjectId(vmRef))
 	if err != nil {
 		return vm, err
 	}
@@ -110,12 +183,16 @@ func (vms *VMService) ReconcileVM(ctx *context.VMContext) (vm infrav1.VirtualMac
 	// Create a new virtualMachineContext to reconcile the VM.
 	vmCtx := &virtualMachineContext{
 		VMContext: *ctx,
-		Obj:       &newVM,
+		Obj:       newVM,
 		Ref:       vmRef,
 		State:     &vm,
 	}
 
-	vms.reconcileVMID(vmCtx)
+	vmCtx.Obj.SetClient(ctx.Session.Client)
+
+	if err := vms.reconcileVMID(vmCtx); err != nil {
+		return vm, err
+	}
 
 	if err := vms.reconcilePCIDevices(vmCtx); err != nil {
 		return vm, err
@@ -147,8 +224,10 @@ func (vms *VMService) ReconcileVM(ctx *context.VMContext) (vm infrav1.VirtualMac
 		conditions.MarkFalse(ctx.ProxmoxVM, infrav1.VMProvisionedCondition, infrav1.TagsAttachmentFailedReason, clusterv1.ConditionSeverityError, err.Error())
 		return vm, err
 	}
+	conditions.MarkTrue(ctx.ProxmoxVM, infrav1.VMProvisionedCondition)
 
 	vm.State = infrav1.VirtualMachineStateReady
+
 	return vm, nil
 }
 
@@ -196,7 +275,7 @@ func (vms *VMService) DestroyVM(ctx *context.VMContext) (infrav1.VirtualMachine,
 	// Create a new virtualMachineContext to reconcile the VM.
 	vmCtx := &virtualMachineContext{
 		VMContext: *ctx,
-		Obj:       &vmToDelete,
+		Obj:       vmToDelete,
 		Ref:       vmRef,
 		State:     &vm,
 	}
@@ -245,7 +324,40 @@ func (vms *VMService) reconcileNetworkStatus(ctx *virtualMachineContext) error {
 // This function is a no-op if the ProxmoxVM has no associated IPAddressClaims.
 // A discovered IPAddress is expected to contain a valid IP, Prefix and Gateway.
 func (vms *VMService) reconcileIPAddresses(ctx *virtualMachineContext) (bool, error) {
-	ipamState, err := BuildState(ctx.VMContext, ctx.State.Network)
+	vm := ctx.Session.VMs[ctx.Obj.Name]
+	if !reflect.DeepEqual(vm, ctx.Obj) {
+		ctx.Logger.Info(fmt.Sprintf("proxmox vm context for %s is out-of-date", ctx.Obj.Name))
+	}
+	if len(vm.VirtualMachineConfig.IPConfigs) != len(ctx.Obj.VirtualMachineConfig.IPConfigs) {
+		ctx.Logger.Info(fmt.Sprintf("proxmox vm ipconfigs for %s are out-of-date", ctx.Obj.Name))
+	}
+	if len(vm.VirtualMachineConfig.Nets) != len(ctx.Obj.VirtualMachineConfig.Nets) {
+		ctx.Logger.Info(fmt.Sprintf("proxmox vm networks for %s are out-of-date", ctx.Obj.Name))
+	}
+
+	state := make(map[string]infrav1.NetworkDeviceSpec)
+	var status []infrav1.NetworkStatus
+	nets := strings.Split(vm.VirtualMachineConfig.Net0, ",")
+
+	// vm.VirtualMachineConfig.Net0 example value
+	// virtio=8A:3E:52:C1:57:96,bridge=vmbr3
+	driverAndMacAddress := strings.Split(nets[0], "=")
+	networkTypeAndName := strings.Split(nets[1], "=")
+	state[nets[0]] = infrav1.NetworkDeviceSpec{
+		DeviceName:  driverAndMacAddress[0],
+		MACAddr:     driverAndMacAddress[1],
+		NetworkName: networkTypeAndName[1],
+		MTU:         pointer.Int64(int64(1500)),
+	}
+	status = append(status, infrav1.NetworkStatus{
+		Connected:   true,
+		IPAddrs:     nil,
+		MACAddr:     driverAndMacAddress[1],
+		NetworkName: networkTypeAndName[1],
+	})
+	ctx.State.Network = status
+	ctx.State.VMID = int(ctx.Obj.VMID)
+	ipamState, err := BuildState(ctx.VMContext, ctx.State.Network, state)
 	if err != nil && !errors.Is(err, ErrWaitingForIPAddr) {
 		return false, err
 	}
@@ -294,7 +406,14 @@ func (vms *VMService) reconcileMetadata(ctx *virtualMachineContext) (bool, error
 	}
 
 	ctx.Logger.Info("updating metadata")
-	err = ctx.Obj.CloudInit(ctx.Obj.VirtualMachineConfig.IDE0, string(existingBootstrapData), string(newMetadata))
+	// func (v *VirtualMachine) CloudInit(device string, userdata string, metadata string, vendordata string, networkconfig string) error
+
+	ctx.Obj.VirtualMachineConfig.Tags = ""
+	// TODO add switch statement to set boot order depending on storage device type
+	if ctx.Obj.VirtualMachineConfig.SCSIHW != "" {
+		ctx.Obj.VirtualMachineConfig.Boot = "order=scsi0"
+	}
+	err = ctx.Obj.CloudInit("ide2", string(existingBootstrapData), string(newMetadata), "", "")
 	if err != nil {
 		return false, errors.Wrapf(err, "unable to set metadata on vm %s", ctx)
 	}
@@ -339,8 +458,18 @@ func (vms *VMService) reconcilePowerState(ctx *virtualMachineContext) (bool, err
 	}
 }
 
-func (vms *VMService) reconcileVMID(ctx *virtualMachineContext) {
-	ctx.State.VMID = ctx.ProxmoxVM.Spec.VMID
+func (vms *VMService) reconcileVMID(ctx *virtualMachineContext) error {
+	if ctx.ProxmoxVM.Spec.VMID == "" {
+		ctx.State.VMID = int(ctx.Obj.VMID)
+		ctx.ProxmoxVM.Spec.VMID = strconv.Itoa(ctx.State.VMID)
+		return nil
+	}
+	id, err := strconv.Atoi(ctx.ProxmoxVM.Spec.VMID)
+	if err != nil {
+		return err
+	}
+	ctx.State.VMID = id
+	return nil
 }
 
 func (vms *VMService) reconcilePCIDevices(ctx *virtualMachineContext) error {
@@ -418,15 +547,39 @@ func (vms *VMService) reconcileHostInfo(ctx *virtualMachineContext) {
 }
 
 func (vms *VMService) setMetadata(ctx *virtualMachineContext, userdata, metadata []byte) error {
-	return ctx.Obj.CloudInit(ctx.Obj.VirtualMachineConfig.IDE0, string(userdata), string(metadata))
+	return ctx.Obj.CloudInit(ctx.Obj.VirtualMachineConfig.IDE0, string(userdata), string(metadata), "", "")
 }
 
 func (vms *VMService) getNetworkStatus(ctx *virtualMachineContext) ([]infrav1.NetworkStatus, error) {
-	ctx.Logger.V(4).Info("got all network statuses", "status", ctx.Obj.VirtualMachineConfig.Nets)
+	if ctx.Obj.GetClient() == nil {
+		ctx.Obj.SetClient(ctx.Session.Client)
+	}
+
+	if ctx.Obj.VirtualMachineConfig == nil {
+		ctx.Obj.VirtualMachineConfig = &proxmox.VirtualMachineConfig{}
+	}
+	if ctx.Obj.VirtualMachineConfig.Nets == nil {
+		ctx.Obj.VirtualMachineConfig.Nets = make(map[string]string)
+		return []infrav1.NetworkStatus{}, nil
+	}
+
 	var apiNetStatus []infrav1.NetworkStatus
 
+	if ctx.Obj.VirtualMachineConfig.IPConfigs == nil {
+		ctx.Obj.VirtualMachineConfig.IPConfigs = make(map[string]string)
+		return []infrav1.NetworkStatus{}, nil
+	}
+
+	if !ctx.Obj.IsRunning() {
+		return []infrav1.NetworkStatus{}, nil
+	}
+	// VM has to be running in order to have the agent return any data
 	iFaces, err := ctx.Obj.AgentGetNetworkIFaces()
-	if err != proxmox.ErrNotFound {
+	if iFaces == nil {
+		conditions.MarkFalse(ctx.ProxmoxVM, infrav1.VMProvisionedCondition, infrav1.WaitingForNetworkAddressesReason, clusterv1.ConditionSeverityInfo, "")
+		return []infrav1.NetworkStatus{}, nil
+	}
+	if err != nil {
 		return []infrav1.NetworkStatus{}, err
 	}
 
@@ -455,6 +608,9 @@ func (vms *VMService) getBootstrapData(ctx *context.VMContext) ([]byte, bootstra
 	secretKey := apitypes.NamespacedName{
 		Namespace: ctx.ProxmoxVM.Spec.BootstrapRef.Namespace,
 		Name:      ctx.ProxmoxVM.Spec.BootstrapRef.Name,
+	}
+	if ctx.Client == nil {
+		ctx.Client = ctx.GetClient()
 	}
 	if err := ctx.Client.Get(ctx, secretKey, secret); err != nil {
 		return nil, "", errors.Wrapf(err, "failed to retrieve bootstrap data secret for %s", ctx)
@@ -544,64 +700,149 @@ func (vms *VMService) reconcileTags(ctx *virtualMachineContext) error {
 // createVM creates a new VM with the data in the VMContext passed. This method does not wait
 // for the new VM to be created.
 func createVM(ctx *context.VMContext, vmRef *proxmox.ClusterResource, bootstrapData []byte, format bootstrapv1.Format) error {
-	// fetch the vm to clone from
-	vm := proxmox.VirtualMachine{}
-	err := ctx.Session.Get(fmt.Sprintf("/nodes/%s/qemu/%s", vmRef.Node, vmRef.ID), vm)
+	if ctx.ProxmoxVM.Spec.Template == "" {
+		return errors.New("proxmoxVM template field is empty")
+	}
+
+	// fetch the template to clone from as a proxmox cluster resource
+	template, err := findTemplateResource(ctx)
+	if err != nil || template == nil {
+		return err
+	}
+
+	ctx.ProxmoxVM.Spec.TemplateNodeRef = template.Node
+	if trimClusterResourceObjectId(template) != ctx.ProxmoxVM.Spec.Template {
+		return errors.New(fmt.Sprintf("templateId %s from proxmox does not match templateid %s from spec", template.ID, ctx.ProxmoxVM.Spec.Template))
+	}
+
+	//ovm, err := fetchVMByClusterResource(ctx, trimClusterResourceObjectId(template))
+	//if err != nil {
+	//	return err
+	//}
+	//fmt.Printf("%#v\n", ovm)
+
+	id, err := strconv.Atoi(trimClusterResourceObjectId(template))
 	if err != nil {
 		return err
 	}
+	var ha int
+	if template.HAstate != "" {
+		ha, err = strconv.Atoi(template.HAstate)
+		if err != nil {
+			return err
+		}
+
+	}
+	if ha != 1 && ha != 0 {
+		ctx.Logger.Info(fmt.Sprintf("unexpected value for HA: %d", ha))
+		ha = 0
+	}
+
+	vm, err := ctx.Session.Nodes[ctx.ProxmoxVM.Spec.TemplateNodeRef].VirtualMachine(id)
+	if err != nil {
+		return err
+	}
+	//vm := &proxmox.VirtualMachine{
+	//	VMID:     proxmox.StringOrUint64(id),
+	//	Node:     template.Node,
+	//	Name:     template.Name,
+	//	Status:   template.Status,
+	//	Template: true,
+	//	HA:       proxmox.HA{Managed: ha},
+	//	Uptime:   template.Uptime,
+	//	CPU:      template.CPU,
+	//	Mem:      template.Mem,
+	//	MaxDisk:  template.MaxDisk,
+	//	MaxMem:   template.MaxMem,
+	//	CPUs:     int(template.MaxCPU),
+	//}
+
+	//req := fmt.Sprintf("/nodes/%s/qemu/%s/status/current", ctx.ProxmoxVM.Spec.TemplateNodeRef, ctx.ProxmoxVM.Spec.Template)
+	//err = ctx.Session.Get(req, vm)
+	//if err != nil {
+	//	return err
+	//}
+	vm.SetClient(ctx.Session.Client)
+	ctx.Session.VMs[vm.Name] = vm
+
+	vmco := proxmox.VirtualMachineCloneOptions{}
+
 	cloneSpec := ctx.ProxmoxVM.Spec.VirtualMachineCloneSpec
-	full := uint8(1)
 
 	if ctx.ProxmoxVM.Spec.CloneMode == infrav1.LinkedClone && vm.Template {
-		full = uint8(0)
+		vmco.Full = uint8(0)
+		vmco.Storage = ""
+	} else {
+		vmco.Full = uint8(1)
+		vmco.Storage = cloneSpec.Datastore
 	}
-	cluster, err := ctx.Session.Cluster()
+	newId, err := strconv.Atoi(trimClusterResourceObjectId(vmRef))
 	if err != nil {
 		return err
 	}
-	nextId, err := cluster.NextID()
-	if err != nil {
-		return err
-	}
-	vmco := proxmox.VirtualMachineCloneOptions{
-		NewID:       nextId,
+	vmco = proxmox.VirtualMachineCloneOptions{
+		NewID:       newId,
 		Description: "",
 		Format:      "", // only valid for full clone: raw, qcow2, vmdk
-		Full:        full,
 		Name:        ctx.ProxmoxVM.Name,
 		Pool:        cloneSpec.ResourcePool,
 		SnapName:    cloneSpec.Snapshot,
-		Storage:     cloneSpec.Datastore,
 		Target:      vmRef.Node,
 	}
+
 	newVMId, taskId, err := vm.Clone(&vmco)
 	if err != nil {
 		return err
 	}
 	ctx.ProxmoxVM.Status.TaskRef = taskId.ID
-	ctx.ProxmoxVM.Status.VmIdRef = newVMId
+	if newVMId != ctx.ProxmoxVM.Status.VmIdRef {
+		ctx.Logger.Error(errors.New("unexpected vm id returned from clone operation"), fmt.Sprintf("expected: %d, received: %d", ctx.ProxmoxVM.Status.VmIdRef, newVMId))
+	}
 
-	// fetch the new vm
-	newVM, err := fetchVMByClusterResource(ctx, strconv.Itoa(newVMId))
+	nvm, err := ctx.Session.Nodes[ctx.ProxmoxVM.Spec.TemplateNodeRef].VirtualMachine(newId)
 	if err != nil {
 		return err
 	}
 
-	return newVM.CloudInit(vm.VirtualMachineConfig.IDE0, string(bootstrapData), fmt.Sprintf("instance-id: %d\nlocal-hostname: %s\n", newVM.VMID, newVM.Name))
+	//nvm := &proxmox.VirtualMachine{
+	//	VMID:    proxmox.StringOrUint64(newId),
+	//	Node:    ctx.ProxmoxVM.Spec.TemplateNodeRef,
+	//	Name:    ctx.ProxmoxVM.Name,
+	//	CPU:     float64(ctx.ProxmoxVM.Spec.VirtualMachineCloneSpec.NumCoresPerSocket),
+	//	Mem:     uint64(ctx.ProxmoxVM.Spec.VirtualMachineCloneSpec.MemoryMiB),
+	//	MaxDisk: uint64(ctx.ProxmoxVM.Spec.VirtualMachineCloneSpec.DiskGiB),
+	//	CPUs:    int(ctx.ProxmoxVM.Spec.VirtualMachineCloneSpec.NumCPUs),
+	//}
+
+	nvm.SetClient(ctx.Session.Client)
+	// fetch the new vm
+	//req = fmt.Sprintf("/nodes/%s/qemu/%d/status/current", nvm.Node, newId)
+	//err = ctx.Session.Get(req, nvm)
+	//if err != nil {
+	//	return err
+	//}
+
+	err = nvm.CloudInit(vm.VirtualMachineConfig.IDE0, string(bootstrapData), fmt.Sprintf("instance-id: %d\nlocal-hostname: %s\n", nvm.VMID, nvm.Name), "", "")
+	if err != nil {
+		return err
+	}
+	ctx.Session.VMs[nvm.Name] = nvm
+
+	//newVM, err := fetchVMByClusterResource(ctx, strconv.Itoa(newVMId))
+	//if err != nil {
+	//	return err
+	//}
+
+	return nil
 }
 
 // errNotFound is returned by the findVMResource function when a VM is not found.
 type errNotFound struct {
-	uuid            string
-	byInventoryPath string
+	vmid string
 }
 
 func (e errNotFound) Error() string {
-	if e.byInventoryPath != "" {
-		return fmt.Sprintf("vm with inventory path %s not found", e.byInventoryPath)
-	}
-	return fmt.Sprintf("vm with bios uuid %s not found", e.uuid)
+	return fmt.Sprintf("failed to find vm with id: %s", e.vmid)
 }
 
 func isNotFound(err error) bool {
@@ -631,10 +872,19 @@ func isVirtualMachineNotFound(err error) bool {
 	}
 }
 
+func isTemplateNotFound(err error) bool {
+	switch err.(type) {
+	case error:
+		return true
+	default:
+		return false
+	}
+}
+
 func wasNotFoundByVMID(err error) bool {
 	switch err.(type) {
 	case errNotFound, *errNotFound:
-		if err.(errNotFound).uuid != "" && err.(errNotFound).byInventoryPath == "" {
+		if err.(errNotFound).vmid != "" {
 			return true
 		}
 		return false
@@ -658,6 +908,35 @@ func sanitizeIPAddrs(ctx *context.VMContext, iPAddresses []*proxmox.AgentNetwork
 	return newIPAddrs
 }
 
+func trimClusterResourceObjectId(resource *proxmox.ClusterResource) string {
+	return strings.Replace(resource.ID, "qemu/", "", 1)
+}
+
+func findTemplateResource(ctx *context.VMContext) (*proxmox.ClusterResource, error) {
+	var vmRef *proxmox.ClusterResource
+	cluster, err := ctx.Session.Cluster()
+	if err != nil {
+		return &proxmox.ClusterResource{}, err
+	}
+
+	templates, err := cluster.Resources("vm")
+	if err != nil {
+		return &proxmox.ClusterResource{}, err
+	}
+
+	for _, template := range templates {
+		if ctx.ProxmoxVM.Spec.Template == strings.Replace(template.ID, "qemu/", "", 1) {
+			ctx.Logger.Info("template found by id", "templateId", template.ID)
+			vmRef = template
+			return vmRef, nil
+		}
+		continue
+	}
+
+	return &proxmox.ClusterResource{}, errNotFound{vmid: ctx.ProxmoxVM.Spec.Template}
+	//fmt.Sprintf("failed to find vm with id: %d", ctx.ProxmoxVM.Status.VmIdRef))
+}
+
 func findVMResource(ctx *context.VMContext) (*proxmox.ClusterResource, error) {
 	var vmRef *proxmox.ClusterResource
 	cluster, err := ctx.Session.Cluster()
@@ -665,43 +944,57 @@ func findVMResource(ctx *context.VMContext) (*proxmox.ClusterResource, error) {
 		return &proxmox.ClusterResource{}, err
 	}
 
-	vms, err := cluster.Resources("qemu")
+	vms, err := cluster.Resources("vm")
 	if err != nil {
 		return &proxmox.ClusterResource{}, err
 	}
 
 	for _, vm := range vms {
-		if strconv.Itoa(ctx.ProxmoxVM.Status.VmIdRef) == vm.ID {
+		if strconv.Itoa(ctx.ProxmoxVM.Status.VmIdRef) == trimClusterResourceObjectId(vm) {
 			ctx.Logger.Info("vm found by id", "vmid", vm.ID)
+			vmRef = vm
 			return vmRef, nil
 		}
 		continue
 	}
-	return &proxmox.ClusterResource{}, errors.New(fmt.Sprintf("failed to find vm with id: %d", ctx.ProxmoxVM.Status.VmIdRef))
+	return &proxmox.ClusterResource{}, errNotFound{vmid: strconv.Itoa(ctx.ProxmoxVM.Status.VmIdRef)}
+	//fmt.Sprintf("failed to find vm with id: %d", ctx.ProxmoxVM.Status.VmIdRef))
 }
 
-func fetchVMByClusterResource(ctx *context.VMContext, nodeID string) (proxmox.VirtualMachine, error) {
-	cluster, err := ctx.Session.Cluster()
-	if err != nil {
-		return proxmox.VirtualMachine{}, err
-	}
+func fetchVMByClusterResource(ctx *context.VMContext, vmID string) (*proxmox.VirtualMachine, error) {
+	cluster := ctx.Session.ProxmoxCluster
 
-	vms, err := cluster.Resources("qemu")
+	vms, err := cluster.Resources("vm")
 	if err != nil {
-		return proxmox.VirtualMachine{}, err
+		return &proxmox.VirtualMachine{}, err
 	}
 	var ref *proxmox.ClusterResource
 	for _, vm := range vms {
-		if nodeID == vm.ID {
+		if vmID == trimClusterResourceObjectId(vm) {
 			ctx.Logger.Info("vm found by id", "vmid", vm.ID)
 			ref = vm
+			break
 		}
 		continue
 	}
+	if ref == nil {
+		return &proxmox.VirtualMachine{}, errors.New(fmt.Sprintf("unable to find resource for vmid: %s", vmID))
+	}
 
-	vm := proxmox.VirtualMachine{}
-	err = ctx.Session.Get(fmt.Sprintf("/nodes/%s/qemu/%s", ref.Node, ref.ID), vm)
-	return vm, err
+	id, err := strconv.Atoi(trimClusterResourceObjectId(ref))
+	if err != nil {
+		return &proxmox.VirtualMachine{}, err
+	}
+
+	machine, err := ctx.Session.Nodes[ref.Node].VirtualMachine(id)
+	if err != nil {
+		return &proxmox.VirtualMachine{}, err
+	}
+	//vm := proxmox.VirtualMachine{}
+	//err = ctx.Session.Get(fmt.Sprintf("/nodes/%s/%s/status/current", ref.Node, ref.ID), vm)
+	ctx.Session.VMs[machine.Name] = machine
+
+	return machine, err
 }
 
 func getTask(ctx *context.VMContext) *proxmox.Task {
@@ -820,14 +1113,14 @@ func reconcileProxmoxVMWhenNetworkIsReady(ctx *virtualMachineContext, powerOnTas
 
 func reconcileProxmoxVMOnTaskCompletion(ctx *context.VMContext) {
 	task := getTask(ctx)
-	if task == nil {
+	if task == nil || task.IsCompleted {
 		ctx.Logger.V(4).Info(
 			"skipping reconcile ProxmoxVM on task completion",
 			"reason", "no-task")
 		return
 	}
 	taskRef := task.ID
-	newTask := proxmox.NewTask(proxmox.UPID(taskRef), ctx.Session.Client)
+	//newTask := proxmox.NewTask(proxmox.UPID(taskRef), ctx.Session.Client)
 
 	ctx.Logger.Info(
 		"enqueuing reconcile request on task completion",
@@ -837,16 +1130,16 @@ func reconcileProxmoxVMOnTaskCompletion(ctx *context.VMContext) {
 		"task-pid", task.PID)
 
 	reconcileProxmoxVMOnFuncCompletion(ctx, func() ([]interface{}, error) {
-		err := newTask.WaitFor(600)
+		err := task.WaitFor(600)
 
 		// An error is only returned if the process of waiting for the result
 		// failed, *not* if the task itself failed.
-		if err != nil && !newTask.IsFailed {
+		if err != nil && !task.IsFailed {
 			return nil, err
 		}
 		// do not queue in the event channel when task fails as we don't
 		// want to retry right away
-		if newTask.Status == "error" {
+		if task.Status != proxmox.TaskRunning {
 			ctx.Logger.Info("async task wait failed")
 			return nil, errors.Errorf("task failed")
 		}

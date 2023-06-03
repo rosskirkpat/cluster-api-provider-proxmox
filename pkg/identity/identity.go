@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/luthermonson/go-proxmox"
 	"strings"
 
 	infrav1 "github.com/rosskirkpat/cluster-api-provider-proxmox/api/v1alpha1"
@@ -18,12 +19,7 @@ const (
 	PasswordKey = "password"
 )
 
-type Credentials struct {
-	Username string
-	Password string
-}
-
-func GetCredentials(ctx context.Context, c client.Client, cluster *infrav1.ProxmoxCluster, controllerNamespace string) (*Credentials, error) {
+func GetCredentials(ctx context.Context, c client.Client, cluster *infrav1.ProxmoxCluster, controllerNamespace string) (*proxmox.Credentials, error) {
 	if err := validateInputs(c, cluster); err != nil {
 		return nil, err
 	}
@@ -83,9 +79,10 @@ func GetCredentials(ctx context.Context, c client.Client, cluster *infrav1.Proxm
 		return nil, err
 	}
 
-	credentials := &Credentials{
+	credentials := &proxmox.Credentials{
 		Username: getData(secret, UsernameKey),
 		Password: getData(secret, PasswordKey),
+		Realm:    "pam",
 	}
 
 	return credentials, nil

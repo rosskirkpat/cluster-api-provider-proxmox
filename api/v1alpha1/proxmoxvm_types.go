@@ -33,7 +33,9 @@ type ProxmoxVMSpec struct {
 	// This field is required at runtime for other controllers that read
 	// this CRD as unstructured data.
 	// +optional
-	VMID string `json:"biosUUID,omitempty"`
+	VMID string `json:"vmId,omitempty"`
+
+	BiosUUID string `json:"biosUUID"`
 }
 
 // ProxmoxVMStatus defines the observed state of ProxmoxVM

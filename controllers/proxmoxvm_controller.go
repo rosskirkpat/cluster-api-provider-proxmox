@@ -4,6 +4,7 @@ import (
 	goctx "context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -349,6 +350,17 @@ func (r *ProxmoxVMReconciler) reconcileNormal(ctx *context.VMContext) (reconcile
 		return reconcile.Result{}, err
 	}
 
+	ctx.Client = r.Client
+
+	//conditions.SetSummary(ctx.ProxmoxVM,
+	//	conditions.WithConditions(
+	//		infrav1.VMProvisionedCondition,
+	//	),
+	//)
+
+	conditions.Delete(ctx.ProxmoxVM, infrav1.VMProvisionedCondition)
+	conditions.Delete(ctx.ProxmoxVM, clusterv1.ReadyCondition)
+
 	// Get or create the VM.
 	vm, err := r.VMService.ReconcileVM(ctx)
 	if err != nil {
@@ -365,14 +377,14 @@ func (r *ProxmoxVMReconciler) reconcileNormal(ctx *context.VMContext) (reconcile
 		return reconcile.Result{}, nil
 	}
 
-	// Update the ProxmoxVM's BIOS UUID.
-	ctx.Logger.Info("vm bios-uuid", "biosuuid", vm.VMID)
+	// Update the ProxmoxVM's VM ID.
+	ctx.Logger.Info("vm id", "vmid", vm.VMID)
 
-	// defensive check to ensure we are not removing the biosUUID
-	if vm.VMID != "" {
-		ctx.ProxmoxVM.Spec.VMID = vm.VMID
+	// defensive check to ensure we are not removing the vmID
+	if vm.VMID != 0 {
+		ctx.ProxmoxVM.Spec.VMID = strconv.Itoa(vm.VMID)
 	} else {
-		return reconcile.Result{}, errors.Errorf("bios uuid is empty while VM is ready")
+		return reconcile.Result{}, errors.Errorf("vmid is empty while VM is ready")
 	}
 
 	// Update the ProxmoxVM's network status.
@@ -538,4 +550,11 @@ func (r *ProxmoxVMReconciler) retrieveProxmoxSession(ctx goctx.Context, proxmoxV
 	// Fallback to using credentials provided to the manager
 	return session.GetOrCreate(r.Context,
 		params)
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *ProxmoxVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&infrav1.ProxmoxVM{}).
+		Complete(r)
 }
